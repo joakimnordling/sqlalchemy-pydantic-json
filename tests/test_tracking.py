@@ -157,6 +157,38 @@ def test_same_root_on_two_rows_flags_both(
     assert load(engine, 2).settings.theme == "both"
 
 
+# --- lists of models ----------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "add",
+    [
+        pytest.param(lambda lst, item: lst.append(item), id="append"),
+        pytest.param(lambda lst, item: lst.extend([item]), id="extend"),
+        pytest.param(lambda lst, item: lst.__iadd__([item]), id="iadd"),
+        pytest.param(lambda lst, item: lst.insert(0, item), id="insert"),
+        pytest.param(lambda lst, item: lst.__setitem__(slice(0, 0), [item]), id="slice"),
+    ],
+)
+def test_model_added_to_list_is_tracked(
+    engine: Engine,
+    fresh: Fresh,
+    expire_on_commit: bool,
+    add: Callable[[list[Address], Address], object],
+) -> None:
+    s, a, _ = fresh(expire_on_commit)
+    item = Address()
+    add(a.settings.history, item)
+    s.commit()
+
+    item = a.settings.history[0]  # the same instance, unless the commit expired it
+    assert a not in s.dirty
+    item.city = "Tampere"
+    assert a in s.dirty
+    s.commit()
+    assert load(engine, 1).settings.history[0].city == "Tampere"
+
+
 # --- moving a model between rows -----------------------------------------------------------------
 
 

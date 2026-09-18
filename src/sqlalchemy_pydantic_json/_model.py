@@ -23,21 +23,27 @@ for the column's model *and* for all of its submodels.
 from __future__ import annotations
 
 import weakref
-from typing import Any
+from collections.abc import Iterable
+from typing import Any, Protocol, Self, SupportsIndex, TypeVar, cast, overload
 
 from pydantic import BaseModel, PrivateAttr
-from sqlalchemy import JSON
+from sqlalchemy import JSON, Dialect
 from sqlalchemy.ext.mutable import Mutable, MutableDict, MutableList, MutableSet
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.types import TypeDecorator
 
 __all__ = ["EmbeddedPydanticModel", "PydanticJSON"]
 
+_M = TypeVar("_M", bound=BaseModel)
+_T = TypeVar("_T")
+_KT = TypeVar("_KT")
+_VT = TypeVar("_VT")
+
 
 # --------------------------------------------------------------------------
 # Column type
 # --------------------------------------------------------------------------
-class PydanticJSON(TypeDecorator):
+class PydanticJSON(TypeDecorator[_M]):
     """
     JSON column type converting to/from a Pydantic model.
 
@@ -48,35 +54,38 @@ class PydanticJSON(TypeDecorator):
     impl = JSON
     cache_ok = True
 
-    def __init__(self, model: type[BaseModel]):
+    def __init__(self, model: type[_M]) -> None:
         super().__init__(none_as_null=True)
         self.model = model
 
-    def process_bind_param(self, value, dialect):
+    def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
         if value is None:
             return None
         return self.model.model_validate(value).model_dump(mode="json")
 
-    def process_result_value(self, value, dialect):
+    def process_result_value(self, value: Any, dialect: Dialect) -> _M | None:
         return None if value is None else self.model.model_validate(value)
 
 
 # --------------------------------------------------------------------------
 # Parent links (supports several parents; stale links are pruned lazily)
 # --------------------------------------------------------------------------
+class _Parent(Protocol):
+    """A model or container that can hold tracked values."""
+
+    def _notify(self) -> None: ...
+
+
 class _ParentLinks:
     __slots__ = ("_refs",)
 
-    def __init__(self):
-        self._refs: dict[int, weakref.ref] = {}
+    def __init__(self) -> None:
+        self._refs: dict[int, weakref.ref[_Parent]] = {}
 
-    def set_only(self, parent):
-        self._refs = {id(parent): weakref.ref(parent)}
-
-    def add(self, parent):
+    def add(self, parent: _Parent) -> None:
         self._refs[id(parent)] = weakref.ref(parent)
 
-    def notify(self, child):
+    def notify(self, child: object) -> None:
         for key, ref in list(self._refs.items()):
             parent = ref()
             # a parent that was garbage collected, or no longer holds the
@@ -87,52 +96,49 @@ class _ParentLinks:
             parent._notify()
 
     # copies and pickles start out unlinked
-    def __copy__(self):
+    def __copy__(self) -> _ParentLinks:
         return _ParentLinks()
 
-    def __deepcopy__(self, memo):
+    def __deepcopy__(self, memo: dict[int, Any]) -> _ParentLinks:
         return _ParentLinks()
 
-    def __reduce__(self):
+    def __reduce__(self) -> tuple[type[_ParentLinks], tuple[()]]:
         return (_ParentLinks, ())
 
 
-def _holds(parent, child) -> bool:
+def _holds(parent: _Parent, child: object) -> bool:
     if isinstance(parent, EmbeddedPydanticModel):
-        d = parent.__dict__
+        d = vars(parent)
         return any(d.get(name) is child for name in type(parent).model_fields)
-    if isinstance(parent, dict):
-        return any(v is child for v in parent.values())
-    if isinstance(parent, list):
-        return any(v is child for v in parent)
+    if isinstance(parent, _TrackedDict):
+        return any(v is child for v in cast("_TrackedDict[Any, Any]", parent).values())
+    if isinstance(parent, _TrackedList):
+        return any(v is child for v in cast("_TrackedList[Any]", parent))
     return False
 
 
-def _link(value, parent):
+def _link(value: Any, parent: _Parent) -> Any:
     """Return `value` with tracking enabled, linked to `parent`."""
+    tracked: _TrackedList[Any] | _TrackedDict[Any, Any] | _TrackedSet[Any]
     if isinstance(value, EmbeddedPydanticModel):
         value._links.add(parent)  # add, not replace: the same instance may live in several places
         return value
-    if isinstance(value, list):
-        if not isinstance(value, _TrackedList):
-            value = _TrackedList(value)
-            for i, v in enumerate(value):
-                list.__setitem__(value, i, _link(v, value))
-        value._links.add(parent)
+    if isinstance(value, _TrackedList | _TrackedDict | _TrackedSet):
+        tracked = cast("_TrackedList[Any] | _TrackedDict[Any, Any] | _TrackedSet[Any]", value)
+    elif isinstance(value, list):
+        # a new container has no parents yet, so filling it (which links each item to it)
+        # notifies nobody
+        tracked = _TrackedList()
+        tracked.extend(cast("list[Any]", value))
+    elif isinstance(value, dict):
+        tracked = _TrackedDict()
+        tracked.update(cast("dict[Any, Any]", value))
+    elif isinstance(value, set):  # set items are hashable, so never models/lists/dicts
+        tracked = _TrackedSet(cast("set[Any]", value))
+    else:
         return value
-    if isinstance(value, dict):
-        if not isinstance(value, _TrackedDict):
-            value = _TrackedDict(value)
-            for k, v in value.items():
-                dict.__setitem__(value, k, _link(v, value))
-        value._links.add(parent)
-        return value
-    if isinstance(value, set):  # set items are hashable, so never models/lists/dicts
-        if not isinstance(value, _TrackedSet):
-            value = _TrackedSet(value)
-        value._links.add(parent)
-        return value
-    return value
+    tracked._links.add(parent)
+    return tracked
 
 
 # --------------------------------------------------------------------------
@@ -142,48 +148,59 @@ class _TrackedContainer:
     @property
     def _links(self) -> _ParentLinks:
         try:
-            return self.__dict__["_links_"]
+            links: _ParentLinks = self.__dict__["_links_"]
         except KeyError:
             links = self.__dict__["_links_"] = _ParentLinks()
-            return links
+        return links
 
-    def changed(self):
+    def changed(self) -> None:
         self._links.notify(self)
 
-    _notify = changed  # a child inside this container changed
+    def _notify(self) -> None:  # a child inside this container changed
+        self.changed()
 
 
-class _TrackedList(_TrackedContainer, MutableList):
-    def __setitem__(self, i, v):
-        v = [_link(x, self) for x in v] if isinstance(i, slice) else _link(v, self)
-        super().__setitem__(i, v)
+# MutableList's and MutableSet's in-place operators (__iadd__, __ior__, ...) don't match list's and
+# set's; that comes from SQLAlchemy.
+class _TrackedList(_TrackedContainer, MutableList[_T]):  # ty: ignore[invalid-method-override]
+    def __setitem__(self, index: SupportsIndex | slice, value: _T | Iterable[_T]) -> None:
+        if isinstance(index, slice):
+            value = [_link(x, self) for x in cast("Iterable[_T]", value)]
+        else:
+            value = _link(value, self)
+        super().__setitem__(index, value)
 
-    def append(self, v):
-        super().append(_link(v, self))
+    def append(self, x: _T) -> None:
+        super().append(_link(x, self))
 
-    def extend(self, vs):
-        super().extend([_link(v, self) for v in vs])
+    def extend(self, x: Iterable[_T]) -> None:
+        super().extend([_link(v, self) for v in x])
 
-    def __iadd__(self, vs):
-        self.extend(vs)
-        return self
-
-    def insert(self, i, v):
-        super().insert(i, _link(v, self))
+    def insert(self, i: SupportsIndex, x: _T) -> None:
+        super().insert(i, _link(x, self))
 
 
-class _TrackedDict(_TrackedContainer, MutableDict):
-    def __setitem__(self, k, v):
-        super().__setitem__(k, _link(v, self))
+class _TrackedDict(_TrackedContainer, MutableDict[_KT, _VT]):
+    def __setitem__(self, key: _KT, value: _VT) -> None:
+        super().__setitem__(key, _link(value, self))
 
-    def setdefault(self, k, v=None):
-        return super().setdefault(k, _link(v, self))
+    # same overloads as MutableDict.setdefault
+    @overload
+    def setdefault(
+        self: _TrackedDict[_KT, _T | None], key: _KT, value: None = None
+    ) -> _T | None: ...
 
-    def update(self, *a, **kw):
+    @overload
+    def setdefault(self, key: _KT, value: _VT) -> _VT: ...
+
+    def setdefault(self, key: _KT, value: object = None) -> object:
+        return super().setdefault(key, _link(value, self))
+
+    def update(self, *a: Any, **kw: _VT) -> None:
         super().update({k: _link(v, self) for k, v in dict(*a, **kw).items()})
 
 
-class _TrackedSet(_TrackedContainer, MutableSet):
+class _TrackedSet(_TrackedContainer, MutableSet[_T]):  # ty: ignore[invalid-method-override]
     pass
 
 
@@ -198,25 +215,27 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
     def model_post_init(self, context: Any, /) -> None:
         self._link_fields()
 
-    def _link_fields(self):
+    def _link_fields(self) -> None:
+        d = vars(self)
         for name in type(self).model_fields:
-            self.__dict__[name] = _link(self.__dict__[name], self)
+            d[name] = _link(d[name], self)
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
         if name in type(self).model_fields:
-            self.__dict__[name] = _link(self.__dict__[name], self)
+            d = vars(self)
+            d[name] = _link(d[name], self)
             self._notify()
 
-    def __delattr__(self, name):
+    def __delattr__(self, name: str) -> None:
         super().__delattr__(name)
         self._notify()
 
-    def _notify(self):
+    def _notify(self) -> None:
         self.changed()
         self._links.notify(self)
 
-    def changed(self):
+    def changed(self) -> None:
         """
         Flag every ORM row that currently holds this instance as modified.
 
@@ -231,43 +250,43 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
             flag_modified(obj, key)
 
     # --- copies are independent: not linked to the original's parents/rows ---
-    def __copy__(self):
+    def __copy__(self) -> Self:
         new = super().__copy__()
+        d = vars(new)
         for name in type(new).model_fields:  # a shallow copy shares containers; give it its own
-            v = new.__dict__[name]
-            for plain in (list, dict, set):
-                if isinstance(v, plain):
-                    new.__dict__[name] = plain(v)
+            v = d[name]
+            if isinstance(v, list | dict | set):
+                d[name] = cast("list[Any] | dict[Any, Any] | set[Any]", v).copy()
         return new._detached()
 
-    def __deepcopy__(self, memo=None):
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
         return super().__deepcopy__(memo)._detached()
 
-    def _detached(self):
-        self.__dict__.pop("_parents", None)
-        self.__pydantic_private__["_links"] = _ParentLinks()
+    def _detached(self) -> Self:
+        vars(self).pop("_parents", None)
+        self._links = _ParentLinks()
         self._link_fields()
         return self
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict[Any, Any]:
         state = super().__getstate__()
         state["__dict__"] = {k: v for k, v in state["__dict__"].items() if k != "_parents"}
         return state
 
-    def __setstate__(self, state):
+    def __setstate__(self, state: dict[Any, Any]) -> None:
         super().__setstate__(state)
         self._link_fields()
 
     # --- SQLAlchemy Mutable hooks ---
     @classmethod
-    def coerce(cls, key, value):
+    def coerce(cls, key: str, value: Any) -> Self | None:
         if value is None or isinstance(value, cls):
             return value
         if isinstance(value, dict):
             return cls.model_validate(value)
-        return super().coerce(key, value)
+        return cast("Self | None", super().coerce(key, value))
 
     @classmethod
-    def column(cls) -> PydanticJSON:
+    def column(cls) -> PydanticJSON[Self]:
         """Column type for ``mapped_column()``, with change tracking enabled."""
-        return cls.as_mutable(PydanticJSON(cls))
+        return cast("PydanticJSON[Self]", cls.as_mutable(PydanticJSON(cls)))

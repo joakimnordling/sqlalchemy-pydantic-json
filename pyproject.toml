@@ -42,7 +42,6 @@ dev = [
     "pyright==1.1.414",
     "ty==0.0.82",  # keep in sync with the ty-pre-commit rev,
     "pre-commit",
-    "typing-extensions",
 ]
 
 [tool.uv]
@@ -70,13 +69,25 @@ ignore = ["RUF012"]
 
 [tool.mypy]
 strict = true
-files = ["src"]
+files = ["src", "tests/typing"]
 cache_dir = ".cache/mypy"
+# The casts are there for pyright, which narrows isinstance() on Any to list[Unknown]
+# etc.; mypy narrows to list[Any] and would call them redundant.
+warn_redundant_casts = false
 
 [tool.pyright]
-include = ["src"]
+include = ["src", "tests/typing"]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
+# The private classes in _model.py use each other's underscore members by design.
+reportPrivateUsage = false
+# tests/typing marks its planted errors with `# type: ignore`; an unneeded one means a missed error
+reportUnnecessaryTypeIgnoreComment = "error"
 
 [tool.ty.src]
-include = ["src"]
+include = ["src", "tests/typing"]
+
+[tool.ty.rules]
+# tests/typing marks its planted errors with `# type: ignore`; an unneeded one means a missed error
+unused-ignore-comment = "error"
+unused-type-ignore-comment = "error"

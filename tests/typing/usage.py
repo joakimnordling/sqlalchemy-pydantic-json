@@ -1,8 +1,15 @@
+"""
+Type-checking tests for code that uses the package; this file is checked, never run.
+
+Every line marked `# type: ignore` must produce an error: the checkers are configured to report
+unused ignore comments, so a planted error that stops being detected fails the check.
+"""
+
 from typing import assert_type
 
 from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute, Mapped, Session, mapped_column
 
-from sqlalchemy_pydantic_json import EmbeddedPydanticModel
+from sqlalchemy_pydantic_json import EmbeddedPydanticModel, PydanticJSON
 
 
 class Address(EmbeddedPydanticModel):
@@ -38,8 +45,14 @@ def use(session: Session) -> None:
     user.settings = Settings(theme="dark")
     user.extra = None
     assert_type(User.settings, InstrumentedAttribute[Settings])  # class-level access
+    assert_type(Settings.column(), PydanticJSON[Settings])
+    assert_type(Address.model_validate({"city": "Espoo"}), Address)
 
 
 def expected_errors(user: User) -> None:
-    user.settings = 123  # should be an error
-    user.settings.theme = 1  # should be an error
+    user.settings = 123  # type: ignore
+    user.settings.theme = 1  # type: ignore
+    user.settings.tags.add(1)  # type: ignore
+    user.settings.address.lines.append(2)  # type: ignore
+    user.settings.address = "Espoo"  # type: ignore
+    print(user.extra.theme)  # type: ignore  # may be None
