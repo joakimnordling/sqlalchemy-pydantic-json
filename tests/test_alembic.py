@@ -133,11 +133,15 @@ def test_autogenerate_upgrade_check_downgrade(
 
 def render(metadata: sa.MetaData, render_item: Any = None, prefix: str = "sa.") -> str:
     """Render the migration that creates `metadata` from scratch."""
-    with sa.create_engine("sqlite://").connect() as conn:
-        context = MigrationContext.configure(conn)
-        ops = produce_migrations(context, metadata).upgrade_ops
-        assert ops is not None
-        return render_python_code(ops, render_item=render_item, sqlalchemy_module_prefix=prefix)
+    engine = sa.create_engine("sqlite://")
+    try:
+        with engine.connect() as conn:
+            context = MigrationContext.configure(conn)
+            ops = produce_migrations(context, metadata).upgrade_ops
+            assert ops is not None
+            return render_python_code(ops, render_item=render_item, sqlalchemy_module_prefix=prefix)
+    finally:
+        engine.dispose()
 
 
 def test_default_rendering_is_broken() -> None:

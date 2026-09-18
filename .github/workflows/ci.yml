@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: "1"
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - run: uv sync --locked
+      - run: uv run pre-commit run --all-files --show-diff-on-failure
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - run: uv sync --locked
+      - name: mypy
+        run: uv run mypy
+      - name: mypy with the pydantic plugin (user-facing typing tests)
+        run: uv run mypy --config-file tests/typing/mypy-pydantic-plugin.ini
+      - name: pyright
+        run: uv run pyright
+      - name: ty
+        run: uv run ty check
+
+  test:
+    name: test (Python ${{ matrix.python }}${{ matrix.lowest && ', lowest deps' || '' }})
+    runs-on: ubuntu-latest
+    # pre-release Python versions don't block
+    continue-on-error: ${{ matrix.experimental || false }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          # the lowest allowed versions of the dependencies (sqlalchemy, pydantic, ...)
+          - python: "3.11"
+            lowest: true
+          - python: "3.15"
+            experimental: true
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test" --health-interval 2s --health-retries 30
+      mariadb:
+        image: mariadb:12.3
+        env:
+          MARIADB_USER: test
+          MARIADB_PASSWORD: test
+          MARIADB_DATABASE: test
+          MARIADB_ROOT_PASSWORD: test
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 2s --health-retries 30
+    env:
+      TEST_POSTGRES_URL: postgresql+psycopg://test:test@localhost:5432/test
+      TEST_MARIADB_URL: mariadb+pymysql://test:test@localhost:3306/test
+      UV_PYTHON: ${{ matrix.python }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+      - name: Install (locked versions)
+        if: ${{ !matrix.lowest }}
+        run: uv sync --locked
+      - name: Install (lowest allowed versions)
+        if: ${{ matrix.lowest }}
+        run: uv sync --resolution lowest-direct
+      - name: Versions
+        run: uv run python -c "import sys, sqlalchemy, pydantic, alembic; print(sys.version, sqlalchemy.__version__, pydantic.VERSION, alembic.__version__)"
+      - name: pytest
+        run: uv run pytest --cov --cov-report=term --cov-report=markdown-append:$GITHUB_STEP_SUMMARY

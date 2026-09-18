@@ -9,7 +9,7 @@ authors = [{ name = "Joakim Nordling", email = "joakim.nordling@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "sqlalchemy>=2.0",
-    "pydantic>=2",
+    "pydantic>=2.6",  # 2.6: == compares fields only (SQLAlchemy keeps state in __dict__)
 ]
 keywords = ["sqlalchemy", "pydantic", "json", "jsonb", "mutable", "mutation-tracking", "orm"]
 classifiers = [
@@ -43,8 +43,11 @@ dev = [
     "ty==0.0.82",  # keep in sync with the ty-pre-commit rev,
     "pre-commit",
     "alembic>=1.13",
-    "psycopg[binary]>=3.2",
+    "psycopg>=3.2",
+    # no binary wheels for Python 3.15 yet; there psycopg uses the system libpq
+    "psycopg-binary>=3.2; python_version < '3.15'",
     "pymysql>=1.1",
+    "pytest-cov>=6",
 ]
 
 [tool.uv]
@@ -54,6 +57,14 @@ required-version = ">=0.12"
 testpaths = ["tests"]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
 filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["sqlalchemy_pydantic_json"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 100
