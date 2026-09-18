@@ -1,0 +1,82 @@
+[project]
+name = "sqlalchemy-pydantic-json"
+version = "0.0.1"
+description = "Pydantic v2 models in SQLAlchemy JSON columns with automatic mutation tracking"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Joakim Nordling", email = "joakim.nordling@gmail.com" }]
+requires-python = ">=3.11"
+dependencies = [
+    "sqlalchemy>=2.0",
+    "pydantic>=2",
+]
+keywords = ["sqlalchemy", "pydantic", "json", "jsonb", "mutable", "mutation-tracking", "orm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Pydantic :: 2",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/joakimnordling/sqlalchemy-pydantic-json"
+
+[build-system]
+requires = ["uv_build>=0.12,<0.13"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff==0.16.8",
+    "mypy==2.3.1",
+    "pyright==1.1.414",
+    "ty==0.0.82",  # keep in sync with the ty-pre-commit rev,
+    "pre-commit",
+    "typing-extensions",
+]
+
+[tool.uv]
+required-version = ">=0.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# D213: a multi-line docstring starts its text on the line after the opening quotes
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "D213"]
+# Pydantic fields with mutable defaults are fine (Pydantic copies them); ruff only knows that
+# for direct BaseModel subclasses.
+ignore = ["RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+# the typing tests contain deliberately wrong lines
+"tests/typing/*" = ["F841"]
+
+[tool.mypy]
+strict = true
+files = ["src"]
+cache_dir = ".cache/mypy"
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+
+[tool.ty.src]
+include = ["src"]
