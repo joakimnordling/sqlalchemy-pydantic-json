@@ -42,6 +42,7 @@ dev = [
     "pyright==1.1.414",
     "ty==0.0.82",  # keep in sync with the ty-pre-commit rev,
     "pre-commit",
+    "alembic>=1.13",
 ]
 
 [tool.uv]
