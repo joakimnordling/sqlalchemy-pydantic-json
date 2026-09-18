@@ -6,7 +6,8 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
-from sqlalchemy import Engine, create_engine, text
+import sqlalchemy as sa
+from sqlalchemy import Engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel, PydanticJSON
@@ -41,14 +42,12 @@ Fresh = Callable[[bool], tuple[Session, User, User]]
 
 
 @pytest.fixture
-def engine() -> Iterator[Engine]:
-    engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine)
+def engine(make_engine: Callable[[sa.MetaData], Engine]) -> Engine:
+    engine = make_engine(Base.metadata)
     with Session(engine) as s:
         s.add_all([User(id=1, settings={"tags": ["x"]}), User(id=2)])
         s.commit()
-    yield engine
-    engine.dispose()
+    return engine
 
 
 @pytest.fixture
@@ -84,6 +83,20 @@ def test_column_types() -> None:
     assert isinstance(columns.extra.type, PydanticJSON)
     assert columns.settings.nullable is False
     assert columns.extra.nullable is True
+
+
+# --- equality ------------------------------------------------------------------------------------
+
+
+def test_equality_ignores_tracking_state(engine: Engine, fresh: Fresh) -> None:
+    assert Settings() == Settings()
+    assert Settings(theme="dark") != Settings()
+    _, a, b = fresh(False)
+    # loaded, linked to rows and parents, vs. freshly built: equal when the values are
+    assert a.settings == Settings(tags={"x"})
+    assert b.settings == Settings()
+    assert a.settings.address == b.settings.address
+    assert a.settings != b.settings
 
 
 # --- sets ----------------------------------------------------------------------------------------

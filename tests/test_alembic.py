@@ -7,6 +7,7 @@ test models by accident.
 """
 
 import shutil
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
 
@@ -18,6 +19,7 @@ from alembic.autogenerate import produce_migrations, render_python_code
 from alembic.autogenerate.api import AutogenContext
 from alembic.config import Config
 from alembic.migration import MigrationContext
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel
@@ -62,8 +64,20 @@ with context.begin_transaction():
 
 
 @pytest.fixture
-def engine(tmp_path: Path) -> sa.Engine:
-    return sa.create_engine(f"sqlite:///{tmp_path / 'app.db'}")
+def engine(db_url: str, tmp_path: Path) -> Iterator[sa.Engine]:
+    if db_url == "sqlite://":  # Alembic and the test use separate connections: needs a file
+        db_url = f"sqlite:///{tmp_path / 'app.db'}"
+    engine = sa.create_engine(db_url)
+    drop_tables(engine)
+    yield engine
+    drop_tables(engine)
+    engine.dispose()
+
+
+def drop_tables(engine: sa.Engine) -> None:
+    with engine.begin() as conn:
+        for table in ("users", "alembic_version"):
+            conn.execute(sa.text(f"DROP TABLE IF EXISTS {table}"))
 
 
 @pytest.fixture
@@ -75,12 +89,12 @@ def run_alembic(tmp_path: Path, engine: sa.Engine) -> Any:
     shutil.copy(template, script_dir / "script.py.mako")
     (script_dir / "env.py").write_text(ENV_PY)
 
-    def run(fn: Any, *args: Any, **kwargs: Any) -> Any:
+    def run(fn: Any, *args: Any, metadata: sa.MetaData = Base.metadata, **kwargs: Any) -> Any:
         config = Config()
         config.set_main_option("script_location", str(script_dir))
         with engine.begin() as connection:
             config.attributes["connection"] = connection
-            config.attributes["metadata"] = Base.metadata
+            config.attributes["metadata"] = metadata
             return fn(config, *args, **kwargs)
 
     return run
@@ -161,3 +175,70 @@ def test_passing_the_factory_itself_gives_a_clear_error() -> None:
     # render_item=make_render_item (without calling it): Alembic calls it with three arguments
     with pytest.raises(TypeError, match=r"Pass its result to Alembic"):
         render(Base.metadata, render_item=make_render_item)
+
+
+# --- the underlying JSON type ---------------------------------------------------------------------
+
+JSONB_ON_POSTGRES = sa.JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+
+
+def users_metadata(json_type: Any) -> sa.MetaData:
+    class Base(DeclarativeBase):
+        pass
+
+    class User(Base):
+        __tablename__ = "users"
+        id: Mapped[int] = mapped_column(primary_key=True)
+        settings: Mapped[Settings] = mapped_column(Settings.column(json_type=json_type))
+
+    return Base.metadata
+
+
+@pytest.mark.parametrize(
+    ("json_type", "rendered"),
+    [
+        pytest.param(
+            JSONB,
+            "postgresql.JSONB(none_as_null=True, astext_type=sa.Text())",
+            id="jsonb",
+        ),
+        pytest.param(
+            JSONB_ON_POSTGRES,
+            "sa.JSON(none_as_null=True).with_variant("
+            "postgresql.JSONB(none_as_null=True, astext_type=sa.Text()), 'postgresql')",
+            id="variant",
+        ),
+    ],
+)
+def test_json_type_is_rendered_and_migrates(
+    backend: str, tmp_path: Path, run_alembic: Any, json_type: Any, rendered: str
+) -> None:
+    if backend != "postgresql":
+        pytest.skip("JSONB is PostgreSQL only")
+    metadata = users_metadata(json_type)
+    run_alembic(command.revision, message="create users", autogenerate=True, metadata=metadata)
+    [migration] = (tmp_path / "migrations" / "versions").glob("*.py")
+    code = migration.read_text()
+    assert f"sa.Column('settings', {rendered}, nullable=False)" in code
+    assert "from sqlalchemy.dialects import postgresql" in code
+    assert "sqlalchemy_pydantic_json" not in code
+
+    run_alembic(command.upgrade, "head", metadata=metadata)
+    run_alembic(command.check, metadata=metadata)
+    run_alembic(command.downgrade, "base", metadata=metadata)
+
+
+@pytest.mark.parametrize(("old", "new"), [(sa.JSON, JSONB), (JSONB, sa.JSON)], ids=["up", "down"])
+def test_switch_between_json_and_jsonb_is_detected(
+    backend: str, engine: sa.Engine, old: Any, new: Any
+) -> None:
+    if backend != "postgresql":
+        pytest.skip("JSONB is PostgreSQL only")
+    users_metadata(old).create_all(engine)
+    with engine.connect() as conn:
+        context = MigrationContext.configure(conn, opts={"compare_type": True})
+        diffs = produce_migrations(context, users_metadata(new)).upgrade_ops
+        assert diffs is not None
+        [[change]] = diffs.as_diffs()
+    assert change[0] == "modify_type"
+    assert change[3] == "settings"

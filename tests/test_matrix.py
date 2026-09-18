@@ -6,13 +6,14 @@ Every case runs in a session that has already committed once, both with and with
 documented limit: changes inside it are not tracked.
 """
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 from pydantic import BaseModel
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel
@@ -120,14 +121,12 @@ def models(request: pytest.FixtureRequest) -> Models:
 
 
 @pytest.fixture
-def engine(models: Models) -> Iterator[Engine]:
-    engine = create_engine("sqlite://")
-    models.base.metadata.create_all(engine)
+def engine(models: Models, make_engine: Callable[[sa.MetaData], Engine]) -> Engine:
+    engine = make_engine(models.base.metadata)
     with sessionmaker(engine)() as s:
         s.add(models.user(id=1, settings={"history": [{"city": "Espoo"}]}))
         s.commit()
-    yield engine
-    engine.dispose()
+    return engine
 
 
 @pytest.mark.parametrize("case", CASES.values(), ids=list(CASES))

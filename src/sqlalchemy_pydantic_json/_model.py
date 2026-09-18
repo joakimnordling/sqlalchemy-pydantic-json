@@ -30,7 +30,7 @@ from pydantic import BaseModel, PrivateAttr
 from sqlalchemy import JSON, Dialect
 from sqlalchemy.ext.mutable import Mutable, MutableDict, MutableList, MutableSet
 from sqlalchemy.orm.attributes import flag_modified
-from sqlalchemy.types import TypeDecorator
+from sqlalchemy.types import TypeDecorator, TypeEngine
 
 __all__ = ["EmbeddedPydanticModel", "PydanticJSON"]
 
@@ -51,12 +51,14 @@ class PydanticJSON(TypeDecorator[_M]):
     tracking (a bare PydanticJSON column would not notice in-place changes).
     """
 
-    impl = JSON
+    impl: TypeEngine[Any] | type[TypeEngine[Any]] = JSON
     cache_ok = True
 
-    def __init__(self, model: type[_M]) -> None:
-        super().__init__(none_as_null=True)
+    def __init__(self, model: type[_M], json_type: type[JSON] | JSON = JSON) -> None:
+        # Replaces TypeDecorator.__init__, which would build `impl` from the class attribute.
         self.model = model
+        self.json_type = json_type(none_as_null=True) if isinstance(json_type, type) else json_type
+        self.impl = self.json_type
 
     def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
         if value is None:
@@ -94,6 +96,13 @@ class _ParentLinks:
                 self._refs.pop(key, None)
                 continue
             parent._notify()
+
+    # Links aren't part of a model's value; Pydantic's `==` compares private attributes too, so
+    # without this no two models would ever be equal.
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _ParentLinks) or NotImplemented
+
+    __hash__ = None  # type: ignore[assignment]
 
     # copies and pickles start out unlinked
     def __copy__(self) -> _ParentLinks:
@@ -287,6 +296,14 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
         return cast("Self | None", super().coerce(key, value))
 
     @classmethod
-    def column(cls) -> PydanticJSON[Self]:
-        """Column type for ``mapped_column()``, with change tracking enabled."""
-        return cast("PydanticJSON[Self]", cls.as_mutable(PydanticJSON(cls)))
+    def column(cls, json_type: type[JSON] | JSON = JSON) -> PydanticJSON[Self]:
+        """
+        Column type for ``mapped_column()``, with change tracking enabled.
+
+        `json_type` is the underlying column type: the generic ``JSON`` by default, or e.g.
+        PostgreSQL's ``JSONB``. A class is created with ``none_as_null=True``, so that ``None`` is
+        stored as SQL ``NULL``. An instance is used as is, e.g. JSONB on PostgreSQL only::
+
+            JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+        """
+        return cast("PydanticJSON[Self]", cls.as_mutable(PydanticJSON(cls, json_type)))

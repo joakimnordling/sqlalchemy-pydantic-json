@@ -7,6 +7,8 @@ unused ignore comments, so a planted error that stops being detected fails the c
 
 from typing import assert_type
 
+from sqlalchemy import JSON, Integer
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute, Mapped, Session, mapped_column
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel, PydanticJSON
@@ -46,6 +48,9 @@ def use(session: Session) -> None:
     user.extra = None
     assert_type(User.settings, InstrumentedAttribute[Settings])  # class-level access
     assert_type(Settings.column(), PydanticJSON[Settings])
+    assert_type(Settings.column(json_type=JSONB), PydanticJSON[Settings])
+    variant = JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
+    assert_type(Settings.column(json_type=variant), PydanticJSON[Settings])
     assert_type(Address.model_validate({"city": "Espoo"}), Address)
 
 
@@ -56,3 +61,4 @@ def expected_errors(user: User) -> None:
     user.settings.address.lines.append(2)  # type: ignore
     user.settings.address = "Espoo"  # type: ignore
     print(user.extra.theme)  # type: ignore  # may be None
+    Settings.column(json_type=Integer)  # type: ignore  # not a JSON type

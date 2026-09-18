@@ -22,13 +22,15 @@ This module doesn't import Alembic at runtime.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal, Never
+from typing import TYPE_CHECKING, Any, Literal, Never, cast
 
 from sqlalchemy_pydantic_json._model import PydanticJSON
 
 if TYPE_CHECKING:
     from alembic.autogenerate.api import AutogenContext
+    from sqlalchemy.types import TypeEngine
 
 __all__ = ["make_render_item"]
 
@@ -45,6 +47,26 @@ def _render_item(type_: str, obj: Any, autogen_context: AutogenContext) -> str |
     if type_ != "type" or not isinstance(obj, PydanticJSON):
         return False
     impl = obj.impl_instance
+    # Alembic's own type rendering (private API): renders the JSON type exactly as if the column
+    # were declared with it directly, incl. dialect imports, JSONB's `astext_type` and
+    # `with_variant()`. Only used while generating migrations; tested in CI.
+    from alembic.autogenerate import render
+
+    repr_type = cast(
+        "Callable[[TypeEngine[Any], AutogenContext], str] | None", vars(render).get("_repr_type")
+    )
+    if repr_type is None:  # pragma: no cover
+        warnings.warn(
+            "alembic.autogenerate.render._repr_type is not available in this Alembic version; "
+            "falling back to simple rendering. Check the generated migration.",
+            stacklevel=2,
+        )
+        return _simple_repr_type(impl, autogen_context)
+    return repr_type(impl, autogen_context)
+
+
+def _simple_repr_type(impl: TypeEngine[Any], autogen_context: AutogenContext) -> str:
+    """Fallback rendering; doesn't handle `with_variant()` or nested types like JSONB's."""
     module = type(impl).__module__
     if module.startswith("sqlalchemy.dialects."):
         # e.g. sqlalchemy.dialects.postgresql.json -> postgresql.JSONB(...)
