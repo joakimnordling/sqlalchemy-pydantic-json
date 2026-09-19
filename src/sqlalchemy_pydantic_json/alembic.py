@@ -55,7 +55,7 @@ def _render_item(type_: str, obj: Any, autogen_context: AutogenContext) -> str |
     repr_type = cast(
         "Callable[[TypeEngine[Any], AutogenContext], str] | None", vars(render).get("_repr_type")
     )
-    if repr_type is None:  # pragma: no cover
+    if repr_type is None:
         warnings.warn(
             "alembic.autogenerate.render._repr_type is not available in this Alembic version; "
             "falling back to simple rendering. Check the generated migration.",

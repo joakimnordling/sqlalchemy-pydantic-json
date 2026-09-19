@@ -246,3 +246,39 @@ def test_switch_between_json_and_jsonb_is_detected(
         [[change]] = diffs.as_diffs()
     assert change[0] == "modify_type"
     assert change[3] == "settings"
+
+
+# --- fallback rendering, if Alembic's private _repr_type is ever gone -----------------------------
+
+
+@pytest.mark.parametrize(
+    ("json_type", "rendered", "imported"),
+    [
+        pytest.param(sa.JSON, "sa.JSON(none_as_null=True)", None, id="json"),
+        pytest.param(
+            JSONB,
+            "postgresql.JSONB(none_as_null=True",
+            "from sqlalchemy.dialects import postgresql",
+            id="jsonb",
+        ),
+    ],
+)
+def test_fallback_rendering(
+    monkeypatch: pytest.MonkeyPatch, json_type: Any, rendered: str, imported: str | None
+) -> None:
+    import alembic.autogenerate.render
+
+    monkeypatch.delattr(alembic.autogenerate.render, "_repr_type")
+    metadata = users_metadata(json_type)
+    engine = sa.create_engine("sqlite://")
+    try:
+        with engine.connect() as conn, pytest.warns(UserWarning, match="simple rendering"):
+            context = AutogenContext(MigrationContext.configure(conn))
+            column_type = metadata.tables["users"].c.settings.type
+            assert make_render_item()("type", column_type, context) == rendered + (
+                "" if imported is None else ", astext_type=Text())"
+            )
+    finally:
+        engine.dispose()
+    if imported:
+        assert imported in context.imports

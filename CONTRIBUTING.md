@@ -70,6 +70,8 @@ uv run pre-commit run --all-files
 
 ## Guidelines
 
+- Test coverage (lines and branches) stays at 100%: `uv run pytest --cov` fails below that. Mark
+  code that truly can't be reached in a test with `# pragma: no cover`, with a comment why.
 - Every bug fix or behaviour change comes with a test, including tests that something does *not*
   mark the row as changed when it shouldn't.
 - Test with both `expire_on_commit=True` and `False` where it matters (the `expire_on_commit`

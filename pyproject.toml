@@ -50,6 +50,8 @@ dev = [
     "pymysql>=1.1",
     "pytest-cov>=6.3",  # 6.3: markdown reports (CI job summary)
     "sqlmodel>=0.0.22",
+    "aiosqlite>=0.20",
+    "greenlet>=3",
 ]
 
 [tool.uv]
@@ -65,6 +67,7 @@ source = ["sqlalchemy_pydantic_json"]
 branch = true
 
 [tool.coverage.report]
+fail_under = 100
 show_missing = true
 skip_covered = true
 

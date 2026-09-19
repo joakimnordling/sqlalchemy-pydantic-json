@@ -168,13 +168,7 @@ class _ParentLinks:
 
     __hash__ = None  # type: ignore[assignment]
 
-    # copies and pickles start out unlinked
-    def __copy__(self) -> _ParentLinks:
-        return _ParentLinks()
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> _ParentLinks:
-        return _ParentLinks()
-
+    # copies (copy.copy and copy.deepcopy use this too) and pickles start out unlinked
     def __reduce__(self) -> tuple[type[_ParentLinks], tuple[()]]:
         return (_ParentLinks, ())
 
@@ -185,9 +179,8 @@ def _holds(parent: _Parent, child: object) -> bool:
         return any(d.get(name) is child for name in type(parent).model_fields)
     if isinstance(parent, _TrackedDict):
         return any(v is child for v in cast("_TrackedDict[Any, Any]", parent).values())
-    if isinstance(parent, _TrackedList):
-        return any(v is child for v in cast("_TrackedList[Any]", parent))
-    return False
+    # the only other parents are lists (set items are never linked)
+    return any(v is child for v in cast("_TrackedList[Any]", parent))
 
 
 def _link(value: Any, parent: _Parent) -> Any:

@@ -18,6 +18,7 @@ may contain breaking changes.
   JSON types into migrations.
 - Type-checker support: mypy, pyright and ty.
 - Works with SQLModel, via `Field(sa_column=Column(Model.column()))`.
+- Works with `AsyncSession`.
 - Tested with SQLite, PostgreSQL and MariaDB, on Python 3.11 to 3.14.
 
 [Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/commits/main
