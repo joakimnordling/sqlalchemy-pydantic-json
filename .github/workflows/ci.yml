@@ -15,6 +15,8 @@ concurrency:
 
 env:
   FORCE_COLOR: "1"
+  # uv's own Python builds (latest patch releases), never the runner's system Python
+  UV_PYTHON_PREFERENCE: only-managed
 
 jobs:
   pre-commit:
@@ -22,6 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+        with:
+          cache-suffix: pre-commit
       - run: uv sync --locked
       - run: uv run pre-commit run --all-files --show-diff-on-failure
 
@@ -30,6 +34,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+        with:
+          cache-suffix: typecheck
       - run: uv sync --locked
       - name: mypy
         run: uv run mypy
@@ -41,7 +47,7 @@ jobs:
         run: uv run ty check
 
   test:
-    name: test (Python ${{ matrix.python }}${{ matrix.deps == 'lowest' && ', lowest deps' || '' }})
+    name: test (Python ${{ matrix.python }}${{ matrix.deps != 'locked' && format(', {0} deps', matrix.deps) || '' }})
     runs-on: ubuntu-latest
     # pre-release Python versions don't block
     continue-on-error: ${{ matrix.experimental || false }}
@@ -49,13 +55,16 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12", "3.13", "3.14"]
-        # "locked": the versions in uv.lock; "lowest": the lowest allowed versions of the
-        # dependencies (sqlalchemy, pydantic, ...)
+        # "locked": the versions in uv.lock. "lowest": the lowest allowed versions of the
+        # dependencies (sqlalchemy, pydantic, ...). "latest": the newest allowed versions, i.e. what
+        # a new user gets today; uv.lock may lag behind.
         deps: [locked]
         include:
           # (an include that matched an existing combination would modify it, not add a job)
           - python: "3.11"
             deps: lowest
+          - python: "3.14"
+            deps: latest
           - python: "3.15"
             deps: locked
             experimental: true
@@ -89,8 +98,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+        with:
+          # one cache per kind of job; with the default key they all race to save the same one
+          cache-suffix: test-${{ matrix.python }}-${{ matrix.deps }}
       - name: Install
-        run: uv sync ${{ matrix.deps == 'locked' && '--locked' || '' }}
+        # latest: re-resolve to the newest versions (only on the runner; the repo's uv.lock is unchanged)
+        run: uv sync ${{ matrix.deps == 'locked' && '--locked' || matrix.deps == 'latest' && '--upgrade' || '' }}
       - name: Versions
         run: uv run python -c "import sys, sqlalchemy, pydantic, alembic; print(sys.version, sqlalchemy.__version__, pydantic.VERSION, alembic.__version__)"
       - name: pytest
