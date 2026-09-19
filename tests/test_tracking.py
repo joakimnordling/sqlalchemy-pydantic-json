@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
@@ -39,6 +40,7 @@ class User(Base):
 
 
 Fresh = Callable[[bool], tuple[Session, User, User]]
+MakeEngine = Callable[[sa.MetaData], Engine]
 
 
 @pytest.fixture
@@ -315,3 +317,65 @@ def test_dict_is_coerced_and_none_stored_as_null(fresh: Fresh, expire_on_commit:
     a.extra = None
     s.commit()
     assert s.execute(text("select extra from users where id = 1")).scalar() is None
+
+
+# --- plain BaseModel submodels (documented: work apart from in-place changes) --------------------
+
+
+class PlainAddress(BaseModel):
+    city: str = "Helsinki"
+
+
+class FrozenCountry(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    code: str = "FI"
+
+
+class MixedSettings(EmbeddedPydanticModel):
+    address: PlainAddress = PlainAddress()
+    history: list[PlainAddress] = []
+    country: FrozenCountry = FrozenCountry()
+
+
+class MixedBase(DeclarativeBase):
+    pass
+
+
+class MixedUser(MixedBase):
+    __tablename__ = "mixed_users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    settings: Mapped[MixedSettings] = mapped_column(MixedSettings.column(), default=MixedSettings)
+
+
+def test_plain_submodels_work_apart_from_in_place_changes(make_engine: MakeEngine) -> None:
+    engine = make_engine(MixedBase.metadata)
+    with Session(engine, expire_on_commit=False) as s:
+        s.add(MixedUser(id=1))
+        s.commit()
+        user = s.get(MixedUser, 1)
+        assert user is not None
+
+        # replacing or adding a plain model is tracked
+        user.settings.address = PlainAddress(city="Espoo")
+        assert user in s.dirty
+        s.commit()
+        user.settings.history.append(PlainAddress(city="Vaasa"))
+        assert user in s.dirty
+        s.commit()
+        user.settings.country = FrozenCountry(code="SE")
+        assert user in s.dirty
+        s.commit()
+
+        # a change inside a plain model is not
+        user.settings.address.city = "Turku"
+        assert user not in s.dirty
+        s.commit()
+
+    with Session(engine) as s:
+        user = s.get(MixedUser, 1)
+        assert user is not None
+        assert user.settings == MixedSettings(
+            address=PlainAddress(city="Espoo"),
+            history=[PlainAddress(city="Vaasa")],
+            country=FrozenCountry(code="SE"),
+        )

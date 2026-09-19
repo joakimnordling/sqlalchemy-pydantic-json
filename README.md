@@ -1,20 +1,10 @@
 # sqlalchemy-pydantic-json
 
-Store Pydantic v2 models in SQLAlchemy 2.0 JSON columns, and have in-place changes saved
-automatically at any depth.
-
-<!-- readme-test: skip -->
-```python
-user.settings.address.city = "Espoo"  # a field in a nested model
-user.settings.tags.add("admin")  # a set
-user.settings.history.append(Visit())  # a list of models
-session.commit()  # all of it is saved
-```
+Store Pydantic models in SQLAlchemy JSON columns, and just change them in place: every change,
+however deeply nested, is saved when you commit.
 
 No `flag_modified()` calls, no event listeners in your code, and full type-checker support
 (mypy, pyright and ty).
-
-> **Status:** early development (0.0.x), not yet on PyPI. The API may still change.
 
 ## Why
 
@@ -205,8 +195,11 @@ context.configure(..., render_item=make_render_item(wrap=my_render_item))
 Migrations then contain `sa.JSON(none_as_null=True)` (or `postgresql.JSONB(...)`, or the variant),
 and depend on neither this package nor your models, so they keep working as your models change.
 
-Changing the *model* (adding a field, say) needs no migration: it's all inside the JSON. Changing
-the column's type between JSON and JSONB is detected like any other type change.
+Changing the *model* doesn't change the database schema, so Alembic has nothing to generate for
+it. Existing rows must still validate against the new model, though: after adding a required field
+or renaming one, say, either make the model accept the old data, or update the stored JSON yourself
+(for example in a hand-written data migration). Changing the column's type between JSON and JSONB
+is detected like any other type change.
 
 ## Using with SQLModel
 
@@ -243,14 +236,17 @@ with SQLModelSession(engine) as session:
 
 ## Rules and gotchas
 
-- **Every model inside the column must inherit `EmbeddedPydanticModel`,** not `pydantic.BaseModel`.
-  Changes inside a plain `BaseModel` aren't tracked, and are lost unless something else in the row
-  changes too.
+- **Every model inside the column should inherit `EmbeddedPydanticModel`,** not
+  `pydantic.BaseModel`. A plain `BaseModel` still loads and saves correctly, and replacing it as a
+  whole is tracked, but changes *inside* it aren't: they're lost unless something else in the row
+  changes too. So plain models are fine only if they're never changed in place, for example frozen
+  ones (`model_config = ConfigDict(frozen=True)`).
 - **If you override `model_post_init`, call `super().model_post_init(context)`.** That's where the
   tracking is set up.
-- **Values are validated every time a row is loaded.** If you change a model, existing rows must
-  still validate: give new fields a default, and handle renamed or removed fields yourself (for
-  example with a `model_validator(mode="before")`).
+- **Values are validated every time a row is loaded,** against the current model. When you change
+  a model, existing rows must still validate: give new fields a default (or update the stored
+  rows), and handle renamed or removed fields, for example with a `model_validator(mode="before")`
+  or a hand-written data migration.
 - **Bulk and Core statements bypass tracking,** as with any SQLAlchemy attribute:
   `session.execute(update(User).values(...))` writes what you give it, and doesn't know about
   in-place changes.
