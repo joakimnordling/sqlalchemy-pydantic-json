@@ -208,6 +208,39 @@ and depend on neither this package nor your models, so they keep working as your
 Changing the *model* (adding a field, say) needs no migration: it's all inside the JSON. Changing
 the column's type between JSON and JSONB is detected like any other type change.
 
+## Using with SQLModel
+
+Declare the column with `sa_column`:
+
+```python
+from sqlalchemy import Column
+from sqlmodel import Field, SQLModel, col, select
+from sqlmodel import Session as SQLModelSession
+
+
+class Player(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
+    settings: Settings = Field(
+        default_factory=Settings,
+        sa_column=Column(Settings.column(), nullable=False),
+    )
+
+
+SQLModel.metadata.create_all(engine)
+
+with SQLModelSession(engine) as session:
+    session.add(Player(id=1))
+    session.commit()
+
+    player = session.get(Player, 1)
+    player.settings.tags.add("captain")  # tracked, as with SQLAlchemy models
+    assert player in session.dirty
+    session.commit()
+
+    query = select(Player.id).where(col(Player.settings)["theme"].as_string() == "light")
+    assert session.exec(query).all() == [1]
+```
+
 ## Rules and gotchas
 
 - **Every model inside the column must inherit `EmbeddedPydanticModel`,** not `pydantic.BaseModel`.
@@ -251,12 +284,15 @@ the column's type between JSON and JSONB is detected like any other type change.
 - [SQLAlchemy-Nested-Mutable](https://github.com/wonderbeyond/sqlalchemy-nested-mutable): nested
   tracking including Pydantic models, but for Pydantic v1 only.
 - [SQLModel](https://sqlmodel.tiangolo.com/): Pydantic and SQLAlchemy in one model class, but no
-  built-in change tracking for Pydantic models in JSON columns.
-- [activemodel](https://github.com/iloveitaly/activemodel): an ActiveRecord-style layer on top of
-  SQLModel; its `PydanticJSONMixin` also tracks changes in Pydantic models in JSON columns. A good
-  fit if you're already using SQLModel and want the rest of what it offers.
+  built-in change tracking for Pydantic models in JSON columns. This package adds it
+  ([see above](#using-with-sqlmodel)).
+- [activemodel](https://github.com/iloveitaly/activemodel): an ActiveRecord-style framework on top
+  of SQLModel. Its `PydanticJSONMixin` also tracks changes in Pydantic models in JSON columns, by
+  comparing snapshots of the JSON when the session commits. It requires SQLModel, and a change
+  isn't visible to flushes (including autoflush before a query) until then.
 
-This package is for plain SQLAlchemy 2.0 declarative models, and does only this one thing.
+This package needs only SQLAlchemy 2.0 and Pydantic. It works with SQLAlchemy's declarative models
+and with SQLModel, and notices every change the moment it's made.
 
 ## Contributing
 
@@ -265,4 +301,4 @@ Changes are listed in the [changelog](https://github.com/joakimnordling/sqlalche
 
 ## License
 
-MIT. Not affiliated with or endorsed by the SQLAlchemy or Pydantic projects.
+[MIT](https://github.com/joakimnordling/sqlalchemy-pydantic-json/blob/main/LICENSE)

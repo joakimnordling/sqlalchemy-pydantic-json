@@ -49,6 +49,7 @@ dev = [
     "psycopg[binary]>=3.2",
     "pymysql>=1.1",
     "pytest-cov>=6.3",  # 6.3: markdown reports (CI job summary)
+    "sqlmodel>=0.0.22",
 ]
 
 [tool.uv]
