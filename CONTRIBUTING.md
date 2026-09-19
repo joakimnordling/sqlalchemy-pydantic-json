@@ -74,6 +74,8 @@ uv run pre-commit run --all-files
   mark the row as changed when it shouldn't.
 - Test with both `expire_on_commit=True` and `False` where it matters (the `expire_on_commit`
   fixture does both).
+- Create database engines with the `make_engine` fixture, or dispose them yourself: a test that
+  leaves a connection open fails (see `no_leaked_connections` in `tests/conftest.py`).
 - Keep the public API small; everything else is underscore-prefixed.
 - Don't rely on private SQLAlchemy APIs.
 - Multi-line docstrings start their text on the line after the opening quotes.
