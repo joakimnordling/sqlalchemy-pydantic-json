@@ -289,8 +289,6 @@ with SQLModelSession(engine) as session:
   whole is tracked, but changes *inside* it aren't: they're lost unless something else in the row
   changes too. So plain models are fine only if they're never changed in place, for example frozen
   ones (`model_config = ConfigDict(frozen=True)`).
-- **If you override `model_post_init`, call `super().model_post_init(context)`.** That's where the
-  tracking is set up.
 - **Values are validated every time a row is loaded,** against the current model. When you change
   a model, existing rows must still validate: give new fields a default (or update the stored
   rows), and handle renamed or removed fields, for example with a `model_validator(mode="before")`

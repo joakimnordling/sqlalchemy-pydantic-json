@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy as sa
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, PrivateAttr
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
@@ -379,3 +379,107 @@ def test_plain_submodels_work_apart_from_in_place_changes(make_engine: MakeEngin
             history=[PlainAddress(city="Vaasa")],
             country=FrozenCountry(code="SE"),
         )
+
+
+# --- a model_post_init of the user's own ----------------------------------------------------------
+
+
+class PostInitWithoutSuper(EmbeddedPydanticModel):
+    tags: list[str] = []
+    ran: bool = False
+
+    def model_post_init(self, context: Any, /) -> None:
+        self.ran = True  # no super().model_post_init(context)
+
+
+class PostInitWithSuper(EmbeddedPydanticModel):
+    tags: list[str] = []
+    _note: str = PrivateAttr(default="")
+
+    def model_post_init(self, context: Any, /) -> None:
+        super().model_post_init(context)
+        self._note = "ran"
+
+
+class PostInitInherited(PostInitWithoutSuper):
+    pass
+
+
+class PostInitBase(DeclarativeBase):
+    pass
+
+
+class PostInitUser(PostInitBase):
+    __tablename__ = "post_init_users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    without_super: Mapped[PostInitWithoutSuper] = mapped_column(
+        PostInitWithoutSuper.column(), default=PostInitWithoutSuper
+    )
+    with_super: Mapped[PostInitWithSuper] = mapped_column(
+        PostInitWithSuper.column(), default=PostInitWithSuper
+    )
+    inherited: Mapped[PostInitInherited] = mapped_column(
+        PostInitInherited.column(), default=PostInitInherited
+    )
+
+
+def test_own_model_post_init_keeps_tracking(
+    make_engine: MakeEngine, expire_on_commit: bool
+) -> None:
+    engine = make_engine(PostInitBase.metadata)
+    with Session(engine, expire_on_commit=expire_on_commit) as s:
+        s.add(PostInitUser(id=1))
+        s.commit()
+        user = s.get(PostInitUser, 1)
+        assert user is not None
+        # the user's own code ran
+        assert user.without_super.ran
+        assert user.with_super._note == "ran"
+        assert user.inherited.ran
+
+        for column in ("without_super", "with_super", "inherited"):
+            s.commit()
+            assert user not in s.dirty
+            getattr(user, column).tags.append("x")  # read after the commit, as it may expire
+            assert user in s.dirty
+        s.commit()
+
+    with Session(engine) as s:
+        user = s.get(PostInitUser, 1)
+        assert user is not None
+        assert user.without_super.tags == user.with_super.tags == user.inherited.tags == ["x"]
+
+
+class PostInitChildOfOwn(PostInitWithoutSuper):
+    extra: int = 0
+
+
+class PlainChild(Settings):
+    pass
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        Settings,
+        PlainChild,
+        PostInitWithoutSuper,
+        PostInitWithSuper,
+        PostInitInherited,
+        PostInitChildOfOwn,
+    ],
+)
+def test_fields_are_linked_once_per_instance(
+    monkeypatch: pytest.MonkeyPatch, model: type[EmbeddedPydanticModel]
+) -> None:
+    calls: list[EmbeddedPydanticModel] = []
+    link_fields = EmbeddedPydanticModel._link_fields
+
+    def counting(self: EmbeddedPydanticModel) -> None:
+        calls.append(self)
+        link_fields(self)
+
+    monkeypatch.setattr(EmbeddedPydanticModel, "_link_fields", counting)
+    instance = model()
+    # (PostInitWithSuper also calls super(), so it links twice, harmlessly)
+    assert len([c for c in calls if c is instance]) == (2 if model is PostInitWithSuper else 1)

@@ -22,8 +22,9 @@ for the column's model *and* for all of its submodels.
 
 from __future__ import annotations
 
+import functools
 import weakref
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any, Protocol, Self, SupportsIndex, TypeVar, cast, overload
 
 from pydantic import AliasChoices, AliasPath, BaseModel, PrivateAttr
@@ -74,6 +75,37 @@ class PydanticJSON(TypeDecorator[_M]):
 # accepts field names, e.g. in rows stored before an alias was added.
 def _validate(model: type[_M], value: Any) -> _M:
     return model.model_validate(value, by_alias=True, by_name=True)
+
+
+# Marks a model_post_init that sets up the tracking. Pydantic wraps model_post_init in every
+# subclass (because of the private attribute) with functools.wraps, which copies the mark along.
+_LINKS_FIELDS = "_sqlalchemy_pydantic_json_links_fields"
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _marked_as_linking(post_init: _F) -> _F:
+    setattr(post_init, _LINKS_FIELDS, True)
+    return post_init
+
+
+def _links_fields(post_init: object) -> bool:
+    """Whether `post_init`, or a function it wraps (functools.wraps), sets up the tracking."""
+    while post_init is not None:
+        if getattr(post_init, _LINKS_FIELDS, False):
+            return True
+        post_init = getattr(post_init, "__wrapped__", None)
+    return False
+
+
+def _linking_post_init(
+    post_init: Callable[[EmbeddedPydanticModel, Any], None],
+) -> Callable[[EmbeddedPydanticModel, Any], None]:
+    @functools.wraps(post_init)
+    def model_post_init(self: EmbeddedPydanticModel, context: Any, /) -> None:
+        post_init(self, context)
+        self._link_fields()  # linking again (if it also called super()) is harmless
+
+    return _marked_as_linking(model_post_init)
 
 
 def _check_aliases_round_trip(model: type[BaseModel]) -> None:
@@ -257,7 +289,13 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
     def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
         super().__pydantic_init_subclass__(**kwargs)
         _check_aliases_round_trip(cls)
+        # A model_post_init of the subclass's own also sets up tracking, whether or not it calls
+        # super().model_post_init().
+        own_post_init = cls.__dict__.get("model_post_init")
+        if own_post_init is not None and not _links_fields(own_post_init):
+            setattr(cls, "model_post_init", _linking_post_init(own_post_init))  # noqa: B010
 
+    @_marked_as_linking
     def model_post_init(self, context: Any, /) -> None:
         self._link_fields()
 
