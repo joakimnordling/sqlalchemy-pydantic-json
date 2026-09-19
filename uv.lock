@@ -1083,7 +1083,7 @@ dev = [
     { name = "pymysql", specifier = ">=1.1" },
     { name = "pyright", specifier = "==1.1.414" },
     { name = "pytest", specifier = ">=8" },
-    { name = "pytest-cov", specifier = ">=6" },
+    { name = "pytest-cov", specifier = ">=6.3" },
     { name = "ruff", specifier = "==0.16.8" },
     { name = "ty", specifier = "==0.0.82" },
 ]

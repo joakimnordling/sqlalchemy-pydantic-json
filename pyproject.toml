@@ -47,7 +47,7 @@ dev = [
     # no binary wheels for Python 3.15 yet; there psycopg uses the system libpq
     "psycopg-binary>=3.2; python_version < '3.15'",
     "pymysql>=1.1",
-    "pytest-cov>=6",
+    "pytest-cov>=6.3",  # 6.3: markdown reports (CI job summary)
 ]
 
 [tool.uv]
