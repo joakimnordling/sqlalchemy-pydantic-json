@@ -26,7 +26,7 @@ pip install sqlalchemy-pydantic-json
 uv add sqlalchemy-pydantic-json
 ```
 
-Requires Python 3.11+, SQLAlchemy 2.0+ and Pydantic 2.6+. Tested with SQLite, PostgreSQL and
+Requires Python 3.11+, SQLAlchemy 2.0.14+ and Pydantic 2.11+. Tested with SQLite, PostgreSQL and
 MariaDB.
 
 **Using Alembic?** Then also do the [one-time Alembic setup](#alembic-setup) below. Without it,
@@ -148,6 +148,54 @@ with Session(engine) as session:
 
 See SQLAlchemy's [JSON type documentation](https://docs.sqlalchemy.org/en/20/core/type_basics.html#sqlalchemy.types.JSON)
 for the operators, and what each database supports.
+
+## Aliases (e.g. camelCase)
+
+Pydantic aliases decide the key names in the stored JSON. For camelCase, make your own base class
+with an alias generator, and use it for all of your models:
+
+```python
+from pydantic import ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+
+class CamelModel(EmbeddedPydanticModel):
+    model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True)
+
+
+class Profile(CamelModel):
+    display_name: str = "anon"  # stored as "displayName"
+    tax_id: str | None = Field(default=None, alias="TIN")  # an explicit alias wins: "TIN"
+
+
+class Member(Base):
+    __tablename__ = "members"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile: Mapped[Profile] = mapped_column(Profile.column(), default=Profile)
+
+
+Base.metadata.create_all(engine)
+
+with Session(engine) as session:
+    session.add(Member(id=1, profile=Profile(display_name="Jocke", TIN="123")))
+    session.commit()  # stored as {"displayName": "Jocke", "TIN": "123"}
+
+    query = select(Member.id).where(Member.profile["displayName"].as_string() == "Jocke")
+    assert session.scalars(query).all() == [1]
+```
+
+- The JSON is stored with the aliases, as by Pydantic's `model_dump(by_alias=True)`. Loading
+  accepts both the aliases and the field names, so rows stored before you added an alias still
+  load. They're stored with the aliases the next time they're saved.
+- Queries into the JSON use the stored names: `Member.profile["displayName"]`.
+- `validate_by_name=True` lets your Python code use field names. Type checkers know the field names
+  of generated aliases (`display_name=`), but only the alias of an explicit `Field(alias="TIN")`
+  (`TIN=`), so write it that way. Also pass `Field(default=...)` as a keyword: type checkers treat
+  a positional default as a required field.
+- A field must be loadable from the name it's stored under. If its `serialization_alias` differs
+  from its `validation_alias`, defining the model raises a `TypeError` (include the stored name
+  with `AliasChoices` if you need both).
 
 ## Default values
 

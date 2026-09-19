@@ -26,7 +26,8 @@ import weakref
 from collections.abc import Iterable
 from typing import Any, Protocol, Self, SupportsIndex, TypeVar, cast, overload
 
-from pydantic import BaseModel, PrivateAttr
+from pydantic import AliasChoices, AliasPath, BaseModel, PrivateAttr
+from pydantic.fields import FieldInfo
 from sqlalchemy import JSON, Dialect
 from sqlalchemy.ext.mutable import Mutable, MutableDict, MutableList, MutableSet
 from sqlalchemy.orm.attributes import flag_modified
@@ -63,10 +64,41 @@ class PydanticJSON(TypeDecorator[_M]):
     def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
         if value is None:
             return None
-        return self.model.model_validate(value).model_dump(mode="json")
+        return _validate(self.model, value).model_dump(mode="json", by_alias=True)
 
     def process_result_value(self, value: Any, dialect: Dialect) -> _M | None:
-        return None if value is None else self.model.model_validate(value)
+        return None if value is None else _validate(self.model, value)
+
+
+# The JSON is stored with the models' aliases (like Pydantic's own `by_alias=True`). Loading also
+# accepts field names, e.g. in rows stored before an alias was added.
+def _validate(model: type[_M], value: Any) -> _M:
+    return model.model_validate(value, by_alias=True, by_name=True)
+
+
+def _check_aliases_round_trip(model: type[BaseModel]) -> None:
+    """Raise if a field is stored under a name it can't be loaded from again."""
+    for name, field in model.model_fields.items():
+        stored = field.serialization_alias or name
+        if stored not in _loadable_names(name, field):
+            raise TypeError(
+                f"{model.__name__}.{name} is stored as {stored!r} (its serialization alias), "
+                f"but can't be loaded from that name (validation alias: "
+                f"{field.validation_alias!r}). Use the same alias for both, or include "
+                f"{stored!r} in the validation alias with AliasChoices."
+            )
+
+
+def _loadable_names(name: str, field: FieldInfo) -> set[str]:
+    names = {name}
+    aliases = field.validation_alias
+    choices = aliases.choices if isinstance(aliases, AliasChoices) else [aliases]
+    for choice in choices:
+        if isinstance(choice, str):
+            names.add(choice)
+        elif isinstance(choice, AliasPath) and len(choice.path) == 1:
+            names.add(str(choice.path[0]))
+    return names
 
 
 # --------------------------------------------------------------------------
@@ -221,6 +253,11 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
 
     _links: _ParentLinks = PrivateAttr(default_factory=_ParentLinks)
 
+    @classmethod
+    def __pydantic_init_subclass__(cls, **kwargs: Any) -> None:
+        super().__pydantic_init_subclass__(**kwargs)
+        _check_aliases_round_trip(cls)
+
     def model_post_init(self, context: Any, /) -> None:
         self._link_fields()
 
@@ -292,7 +329,7 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
         if value is None or isinstance(value, cls):
             return value
         if isinstance(value, dict):
-            return cls.model_validate(value)
+            return _validate(cls, value)
         return cast("Self | None", super().coerce(key, value))
 
     @classmethod

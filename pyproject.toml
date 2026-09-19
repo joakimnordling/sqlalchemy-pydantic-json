@@ -8,8 +8,8 @@ license-files = ["LICENSE"]
 authors = [{ name = "Joakim Nordling", email = "joakim.nordling@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
-    "sqlalchemy>=2.0",
-    "pydantic>=2.6",  # 2.6: == compares fields only (SQLAlchemy keeps state in __dict__)
+    "sqlalchemy>=2.0.14",  # the lowest CI can test: the sqlmodel dev dependency needs it
+    "pydantic>=2.11",  # 2.11: model_validate(by_alias=..., by_name=...)
 ]
 keywords = ["sqlalchemy", "pydantic", "json", "jsonb", "mutable", "mutation-tracking", "orm"]
 classifiers = [

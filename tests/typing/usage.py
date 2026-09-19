@@ -7,6 +7,8 @@ unused ignore comments, so a planted error that stops being detected fails the c
 
 from typing import assert_type
 
+from pydantic import ConfigDict, Field
+from pydantic.alias_generators import to_camel
 from sqlalchemy import JSON, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute, Mapped, Session, mapped_column
@@ -23,6 +25,15 @@ class Settings(EmbeddedPydanticModel):
     theme: str = "light"
     tags: set[str] = set()
     address: Address = Address()
+
+
+class CamelModel(EmbeddedPydanticModel):
+    model_config = ConfigDict(alias_generator=to_camel, validate_by_name=True)
+
+
+class Profile(CamelModel):
+    display_name: str = "anon"
+    tax_id: str | None = Field(default=None, alias="TIN")
 
 
 class Base(DeclarativeBase):
@@ -52,6 +63,10 @@ def use(session: Session) -> None:
     variant = JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
     assert_type(Settings.column(json_type=variant), PydanticJSON[Settings])
     assert_type(Address.model_validate({"city": "Espoo"}), Address)
+    # aliases: field names for generated aliases, the alias for an explicit one (as the README says)
+    profile = Profile(display_name="Jocke", TIN="123")
+    assert_type(profile.tax_id, str | None)
+    assert_type(Profile.column(), PydanticJSON[Profile])
 
 
 def expected_errors(user: User) -> None:
