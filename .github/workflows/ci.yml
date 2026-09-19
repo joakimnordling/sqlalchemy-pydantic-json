@@ -41,7 +41,7 @@ jobs:
         run: uv run ty check
 
   test:
-    name: test (Python ${{ matrix.python }}${{ matrix.lowest && ', lowest deps' || '' }})
+    name: test (Python ${{ matrix.python }}${{ matrix.deps == 'lowest' && ', lowest deps' || '' }})
     runs-on: ubuntu-latest
     # pre-release Python versions don't block
     continue-on-error: ${{ matrix.experimental || false }}
@@ -49,11 +49,15 @@ jobs:
       fail-fast: false
       matrix:
         python: ["3.11", "3.12", "3.13", "3.14"]
+        # "locked": the versions in uv.lock; "lowest": the lowest allowed versions of the
+        # dependencies (sqlalchemy, pydantic, ...)
+        deps: [locked]
         include:
-          # the lowest allowed versions of the dependencies (sqlalchemy, pydantic, ...)
+          # (an include that matched an existing combination would modify it, not add a job)
           - python: "3.11"
-            lowest: true
+            deps: lowest
           - python: "3.15"
+            deps: locked
             experimental: true
     services:
       postgres:
@@ -80,15 +84,13 @@ jobs:
       TEST_POSTGRES_URL: postgresql+psycopg://test:test@localhost:5432/test
       TEST_MARIADB_URL: mariadb+pymysql://test:test@localhost:3306/test
       UV_PYTHON: ${{ matrix.python }}
+      # Applies to every uv command in the job: `uv run` re-resolves if it differs from `uv sync`'s.
+      UV_RESOLUTION: ${{ matrix.deps == 'lowest' && 'lowest-direct' || 'highest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
-      - name: Install (locked versions)
-        if: ${{ !matrix.lowest }}
-        run: uv sync --locked
-      - name: Install (lowest allowed versions)
-        if: ${{ matrix.lowest }}
-        run: uv sync --resolution lowest-direct
+      - name: Install
+        run: uv sync ${{ matrix.deps == 'locked' && '--locked' || '' }}
       - name: Versions
         run: uv run python -c "import sys, sqlalchemy, pydantic, alembic; print(sys.version, sqlalchemy.__version__, pydantic.VERSION, alembic.__version__)"
       - name: pytest
