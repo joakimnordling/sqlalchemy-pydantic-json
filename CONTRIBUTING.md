@@ -1,0 +1,81 @@
+# Contributing
+
+Thanks for your interest! Bug reports, questions and pull requests are welcome on
+[GitHub](https://github.com/joakimnordling/sqlalchemy-pydantic-json). For anything bigger than a
+small fix, please open an issue first so we can agree on the approach.
+
+## Setup
+
+The project uses [uv](https://docs.astral.sh/uv/) for everything.
+
+```bash
+git clone https://github.com/joakimnordling/sqlalchemy-pydantic-json.git
+cd sqlalchemy-pydantic-json
+uv sync                    # creates .venv with the package and all dev tools
+uv run pre-commit install  # runs the checks on every commit
+```
+
+## Running the tests
+
+```bash
+uv run pytest
+```
+
+This runs against SQLite only. To also test PostgreSQL and MariaDB, start them with Docker and
+point the tests at them:
+
+```bash
+docker compose up -d --wait
+export TEST_POSTGRES_URL=postgresql+psycopg://test:test@localhost:55432/test
+export TEST_MARIADB_URL=mariadb+pymysql://test:test@localhost:53306/test
+uv run pytest
+```
+
+Every test that uses a database runs once per configured backend. `docker compose down` stops the
+databases.
+
+CI also runs the tests on every supported Python version, and with the lowest and the newest
+allowed versions of the dependencies. To try the lowest versions locally:
+
+```bash
+UV_RESOLUTION=lowest-direct uv run pytest
+```
+
+(This rewrites `uv.lock`; run `git checkout uv.lock && uv sync` afterwards.)
+
+## Type checking
+
+The package code and the typing tests are checked with mypy, pyright and ty, all in strict mode.
+All three must pass:
+
+```bash
+uv run mypy
+uv run pyright
+uv run ty check
+uv run mypy --config-file tests/typing/mypy-pydantic-plugin.ini  # as seen with Pydantic's plugin
+```
+
+`tests/typing/` contains code as a user of the package would write it. It's type-checked, never
+run. Lines that must be reported as errors are marked `# type: ignore`, and the checkers are set up
+to report unneeded ignores. So if a planted error stops being detected, the check fails.
+
+## Linting and formatting
+
+[ruff](https://docs.astral.sh/ruff/) does both, and runs as part of pre-commit. To run all hooks by
+hand:
+
+```bash
+uv run pre-commit run --all-files
+```
+
+## Guidelines
+
+- Every bug fix or behaviour change comes with a test, including tests that something does *not*
+  mark the row as changed when it shouldn't.
+- Test with both `expire_on_commit=True` and `False` where it matters (the `expire_on_commit`
+  fixture does both).
+- Keep the public API small; everything else is underscore-prefixed.
+- Don't rely on private SQLAlchemy APIs.
+- Multi-line docstrings start their text on the line after the opening quotes.
+- Add a line to the `Unreleased` section of [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
+- The README examples are run by the tests (`tests/test_readme.py`), so keep them working.

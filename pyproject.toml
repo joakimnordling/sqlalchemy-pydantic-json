@@ -29,6 +29,9 @@ classifiers = [
 
 [project.urls]
 Homepage = "https://github.com/joakimnordling/sqlalchemy-pydantic-json"
+Documentation = "https://github.com/joakimnordling/sqlalchemy-pydantic-json#readme"
+Changelog = "https://github.com/joakimnordling/sqlalchemy-pydantic-json/blob/main/CHANGELOG.md"
+Issues = "https://github.com/joakimnordling/sqlalchemy-pydantic-json/issues"
 
 [build-system]
 requires = ["uv_build>=0.12,<0.13"]
