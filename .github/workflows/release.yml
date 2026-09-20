@@ -24,7 +24,7 @@ jobs:
           cache-suffix: release
       - name: Check that the tag matches the version in pyproject.toml
         run: |
-          version="$(uv version --short)"
+          version="$(uv version --short --color never)"  # FORCE_COLOR would add escape codes
           tag="${GITHUB_REF_NAME#v}"
           echo "version: $version, tag: $tag"
           test "$version" = "$tag"
