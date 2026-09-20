@@ -68,6 +68,23 @@ hand:
 uv run pre-commit run --all-files
 ```
 
+## Releasing
+
+Publishing happens on GitHub Actions through PyPI trusted publishing (no tokens), when a version tag
+is pushed:
+
+```bash
+uv version 0.1.0          # or e.g. 0.1.0a1 for a pre-release
+# move the CHANGELOG's Unreleased entries under "## [0.1.0] - <date>"
+git commit -am "Release 0.1.0" && git push
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+The workflow checks that the tag matches the version in `pyproject.toml`, builds and checks the
+package, publishes it to PyPI and creates a GitHub release with that version's changelog section.
+Versions with `a`, `b` or `rc` in them are marked as pre-releases; installers ignore those unless
+asked for explicitly.
+
 ## Guidelines
 
 - Test coverage (lines and branches) stays at 100%: `uv run pytest --cov` fails below that. Mark

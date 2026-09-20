@@ -1,6 +1,6 @@
 [project]
 name = "sqlalchemy-pydantic-json"
-version = "0.0.1"
+version = "0.0.1a1"
 description = "Pydantic v2 models in SQLAlchemy JSON columns with automatic mutation tracking"
 readme = "README.md"
 license = "MIT"
