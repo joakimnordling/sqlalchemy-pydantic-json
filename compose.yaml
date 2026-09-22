@@ -1,0 +1,28 @@
+# Databases for the test suite: `docker compose up -d --wait`, then run pytest with
+#   TEST_POSTGRES_URL=postgresql+psycopg://test:test@localhost:55432/test
+#   TEST_MARIADB_URL=mariadb+pymysql://test:test@localhost:53306/test
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: test
+    ports: ["55432:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "test"]
+      interval: 2s
+      retries: 30
+
+  mariadb:
+    image: mariadb:12.3
+    environment:
+      MARIADB_USER: test
+      MARIADB_PASSWORD: test
+      MARIADB_DATABASE: test
+      MARIADB_ROOT_PASSWORD: test
+    ports: ["53306:3306"]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 2s
+      retries: 30
