@@ -54,8 +54,7 @@ def test_recommended_defaults(make_engine: MakeEngine, expire_on_commit: bool) -
         assert b not in s.dirty
         s.commit()
     with Session(engine) as s:
-        a, b = s.get(User, 1), s.get(User, 2)
-        assert a is not None and b is not None
+        a, b = s.get_one(User, 1), s.get_one(User, 2)
         assert (a.from_class.tags, a.from_dict.tags) == (["x"], ["y"])
         assert (b.from_class.tags, b.from_dict.tags) == ([], [])
 

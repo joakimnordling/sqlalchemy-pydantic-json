@@ -60,8 +60,7 @@ def fresh(engine: Engine) -> Iterator[Fresh]:
     def open_(expire: bool) -> tuple[Session, User, User]:
         s = Session(engine, expire_on_commit=expire)
         sessions.append(s)
-        a, b = s.get(User, 1), s.get(User, 2)
-        assert a is not None and b is not None
+        a, b = s.get_one(User, 1), s.get_one(User, 2)
         return s, a, b
 
     yield open_
@@ -71,8 +70,7 @@ def fresh(engine: Engine) -> Iterator[Fresh]:
 
 def load(engine: Engine, user_id: int) -> User:
     with Session(engine) as s:
-        user = s.get(User, user_id)
-        assert user is not None
+        user = s.get_one(User, user_id)
         return user
 
 
@@ -352,8 +350,7 @@ def test_plain_submodels_work_apart_from_in_place_changes(make_engine: MakeEngin
     with Session(engine, expire_on_commit=False) as s:
         s.add(MixedUser(id=1))
         s.commit()
-        user = s.get(MixedUser, 1)
-        assert user is not None
+        user = s.get_one(MixedUser, 1)
 
         # replacing or adding a plain model is tracked
         user.settings.address = PlainAddress(city="Espoo")
@@ -372,8 +369,7 @@ def test_plain_submodels_work_apart_from_in_place_changes(make_engine: MakeEngin
         s.commit()
 
     with Session(engine) as s:
-        user = s.get(MixedUser, 1)
-        assert user is not None
+        user = s.get_one(MixedUser, 1)
         assert user.settings == MixedSettings(
             address=PlainAddress(city="Espoo"),
             history=[PlainAddress(city="Vaasa")],
@@ -430,8 +426,7 @@ def test_own_model_post_init_keeps_tracking(
     with Session(engine, expire_on_commit=expire_on_commit) as s:
         s.add(PostInitUser(id=1))
         s.commit()
-        user = s.get(PostInitUser, 1)
-        assert user is not None
+        user = s.get_one(PostInitUser, 1)
         # the user's own code ran
         assert user.without_super.ran
         assert user.with_super._note == "ran"
@@ -445,8 +440,7 @@ def test_own_model_post_init_keeps_tracking(
         s.commit()
 
     with Session(engine) as s:
-        user = s.get(PostInitUser, 1)
-        assert user is not None
+        user = s.get_one(PostInitUser, 1)
         assert user.without_super.tags == user.with_super.tags == user.inherited.tags == ["x"]
 
 

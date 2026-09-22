@@ -80,14 +80,14 @@ def test_column_type_in_database(setup: Any) -> None:
 def test_round_trip_and_tracking(setup: Any) -> None:
     engine, user, _ = setup
     with Session(engine) as s:
-        u = s.get(user, 1)
+        u = s.get_one(user, 1)
         assert u.settings == Settings(theme="dark", level=3, address=Address(city="Espoo"))
         u.settings.tags.append("x")
         u.settings.address.city = "Turku"
         assert u in s.dirty
         s.commit()
     with Session(engine) as s:
-        u = s.get(user, 1)
+        u = s.get_one(user, 1)
         assert u.settings.tags == ["x"]
         assert u.settings.address.city == "Turku"
 
@@ -96,10 +96,10 @@ def test_none_is_sql_null(setup: Any) -> None:
     engine, user, _ = setup
     with Session(engine) as s:
         assert s.scalars(sa.select(user.id).where(user.extra.is_(None))).all() == [1, 2]
-        s.get(user, 1).extra = Settings()
+        s.get_one(user, 1).extra = Settings()
         s.commit()
         assert s.scalars(sa.select(user.id).where(user.extra.is_not(None))).all() == [1]
-        s.get(user, 1).extra = None
+        s.get_one(user, 1).extra = None
         s.commit()
         raw = s.execute(sa.text("select extra from json_types where id = 1")).scalar()
         assert raw is None

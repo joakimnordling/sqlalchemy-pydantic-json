@@ -35,8 +35,7 @@ def test_sqlmodel_round_trip_and_tracking(make_engine: MakeEngine, expire_on_com
         s.add(Hero(id=1, name="Deadpond", extra=Settings(theme="dark")))
         s.commit()
 
-        hero = s.get(Hero, 1)
-        assert hero is not None
+        hero = s.get_one(Hero, 1)
         assert isinstance(hero.settings, Settings)
         assert isinstance(hero.extra, Settings)
         assert hero.extra.theme == "dark"
@@ -48,8 +47,7 @@ def test_sqlmodel_round_trip_and_tracking(make_engine: MakeEngine, expire_on_com
         s.commit()
 
     with Session(engine) as s:
-        hero = s.get(Hero, 1)
-        assert hero is not None
+        hero = s.get_one(Hero, 1)
         assert hero.settings.tags == ["fast"]
         assert hero.settings.address.city == "Espoo"
 

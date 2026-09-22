@@ -119,8 +119,7 @@ def test_autogenerate_upgrade_check_downgrade(
         s.add(User(id=1, settings={"tags": ["a"], "address": {"city": "Espoo"}}))
         s.commit()
     with Session(engine) as s:
-        user = s.get(User, 1)
-        assert user is not None
+        user = s.get_one(User, 1)
         assert user.settings.address.city == "Espoo"
         assert user.extra is None
 

@@ -20,7 +20,7 @@ from sqlalchemy_pydantic_json import EmbeddedPydanticModel
 from tests.helpers import capture_updates
 
 
-@dataclass
+@dataclass(frozen=True)
 class Models:
     base: type[DeclarativeBase]
     user: Any
@@ -54,7 +54,7 @@ def make_models(sub_base: type[BaseModel]) -> Models:
 MODELS = {"embedded-sub": make_models(EmbeddedPydanticModel), "plain-sub": make_models(BaseModel)}
 
 
-@dataclass
+@dataclass(frozen=True)
 class Case:
     mutate: Callable[[Any, Models], object]
     persisted: Callable[[Any], bool]
@@ -137,7 +137,7 @@ def test_change(engine: Engine, models: Models, expire_on_commit: bool, case: Ca
     )
 
     with make_session() as s:  # one long-lived session, with commits in between
-        user = s.get(models.user, 1)
+        user = s.get_one(models.user, 1)
         if case.setup:
             case.setup(user.settings, models)
         s.commit()
@@ -150,4 +150,4 @@ def test_change(engine: Engine, models: Models, expire_on_commit: bool, case: Ca
 
     if case.changes:  # an untracked change is lost
         with make_session() as s:
-            assert case.persisted(s.get(models.user, 1).settings) is tracked
+            assert case.persisted(s.get_one(models.user, 1).settings) is tracked

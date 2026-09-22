@@ -58,9 +58,7 @@ def session(engine: sa.Engine, expire_on_commit: bool) -> Iterator[Session]:
 
 
 def get_user(session: Session) -> User:
-    user = session.get(User, 1)
-    assert user is not None
-    return user
+    return session.get_one(User, 1)
 
 
 def reload(engine: sa.Engine) -> Settings:

@@ -50,14 +50,12 @@ def run_steps(
         s.commit()
     for change, saved in steps:
         with Session(engine, expire_on_commit=expire_on_commit) as s:
-            user = s.get(User, 1)
-            assert user is not None
+            user = s.get_one(User, 1)
             change(user.settings)
             assert user in s.dirty
             s.commit()
         with Session(engine) as s:
-            user = s.get(User, 1)
-            assert user is not None
+            user = s.get_one(User, 1)
             assert saved(user.settings)
 
 
@@ -68,17 +66,20 @@ def test_optional_submodel(make_engine: MakeEngine, expire_on_commit: bool) -> N
         [
             (
                 lambda st: setattr(st, "address", Address(city="Oulu")),
-                lambda st: st.address.city == "Oulu",
+                lambda st: st.address is not None and st.address.city == "Oulu",
             ),
-            (lambda st: setattr(st.address, "city", "Pori"), lambda st: st.address.city == "Pori"),
+            (
+                lambda st: setattr(st.address, "city", "Pori"),
+                lambda st: st.address is not None and st.address.city == "Pori",
+            ),
             (lambda st: setattr(st, "address", None), lambda st: st.address is None),
             (
                 lambda st: setattr(st, "address", {"city": "Kemi"}),
-                lambda st: st.address.city == "Kemi",
+                lambda st: st.address is not None and st.address.city == "Kemi",
             ),
             (
                 lambda st: setattr(st.address, "city", "Lahti"),
-                lambda st: st.address.city == "Lahti",
+                lambda st: st.address is not None and st.address.city == "Lahti",
             ),
         ],
     )
@@ -88,8 +89,7 @@ def test_validate_assignment(make_engine: MakeEngine) -> None:
     engine = make_engine(Base.metadata)
     run_steps(engine, False, [(lambda st: setattr(st, "level", "5"), lambda st: st.level == 5)])
     with Session(engine) as s:
-        user = s.get(User, 1)
-        assert user is not None
+        user = s.get_one(User, 1)
         with pytest.raises(ValidationError):
             user.settings.level = "not a number"  # type: ignore[assignment]
         assert user not in s.dirty
@@ -109,10 +109,9 @@ def test_frozen_submodel_is_replaced_not_changed(make_engine: MakeEngine) -> Non
         ],
     )
     with Session(engine) as s:
-        user = s.get(User, 1)
-        assert user is not None
+        user = s.get_one(User, 1)
         with pytest.raises(ValidationError, match="frozen"):
-            user.settings.country.code = "NO"  # type: ignore[misc]
+            user.settings.country.code = "NO"
         assert user not in s.dirty
 
 

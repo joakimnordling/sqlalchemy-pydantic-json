@@ -26,7 +26,9 @@ class HomeAddress(CamelModel):
 
 class Profile(CamelModel):
     display_name: str = "anon"
-    tax_id: str | None = Field(None, alias="TIN")  # an explicit alias wins over the generator
+    # an explicit alias wins over the generator; `default=` as a keyword keeps it optional for
+    # type checkers, which know this field only by its alias
+    tax_id: str | None = Field(default=None, alias="TIN")
     home_address: HomeAddress = HomeAddress()
     past_addresses: list[HomeAddress] = []
 
@@ -53,7 +55,7 @@ def test_stored_with_aliases_and_loaded_back(
 ) -> None:
     engine = make_engine(Base.metadata)
     with Session(engine, expire_on_commit=expire_on_commit) as s:
-        s.add(User(id=1, profile=Profile(display_name="Jocke", tax_id="123")))
+        s.add(User(id=1, profile=Profile(display_name="Jocke", TIN="123")))
         s.commit()
         assert stored_json(s) == {
             "displayName": "Jocke",
@@ -62,8 +64,7 @@ def test_stored_with_aliases_and_loaded_back(
             "pastAddresses": [],
         }
 
-        user = s.get(User, 1)
-        assert user is not None
+        user = s.get_one(User, 1)
         assert user.profile.display_name == "Jocke"
         assert user.profile.tax_id == "123"
 
@@ -85,10 +86,9 @@ def test_rows_stored_with_field_names_still_load(make_engine: MakeEngine) -> Non
             sa.text("insert into alias_users (id, profile) values (1, :p)"), {"p": json.dumps(old)}
         )
         s.commit()
-        user = s.get(User, 1)
-        assert user is not None
+        user = s.get_one(User, 1)
         assert user.profile == Profile(
-            display_name="Old", tax_id="9", home_address=HomeAddress(zip_code="33100")
+            display_name="Old", TIN="9", home_address=HomeAddress(zip_code="33100")
         )
         # the next save stores the aliases
         user.profile.display_name = "New"
@@ -110,8 +110,7 @@ def test_assigned_dict_accepts_aliases_and_field_names(
     with Session(engine) as s:
         s.add(User(id=1))
         s.commit()
-        user = s.get(User, 1)
-        assert user is not None
+        user = s.get_one(User, 1)
         user.profile = value  # type: ignore[assignment]
         assert (user.profile.display_name, user.profile.tax_id) == ("D", "1")
         s.commit()

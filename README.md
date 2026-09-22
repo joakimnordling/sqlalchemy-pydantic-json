@@ -1,5 +1,12 @@
 # sqlalchemy-pydantic-json
 
+[![PyPI](https://img.shields.io/pypi/v/sqlalchemy-pydantic-json)](https://pypi.org/project/sqlalchemy-pydantic-json/)
+[![Python versions](https://img.shields.io/pypi/pyversions/sqlalchemy-pydantic-json)](https://pypi.org/project/sqlalchemy-pydantic-json/)
+[![CI](https://github.com/joakimnordling/sqlalchemy-pydantic-json/actions/workflows/ci.yml/badge.svg)](https://github.com/joakimnordling/sqlalchemy-pydantic-json/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/pypi/l/sqlalchemy-pydantic-json)](https://github.com/joakimnordling/sqlalchemy-pydantic-json/blob/main/LICENSE)
+[![Coverage: 100%](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/joakimnordling/sqlalchemy-pydantic-json/actions/workflows/ci.yml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+
 Store Pydantic models in SQLAlchemy JSON columns, and just change them in place: every change,
 however deeply nested, is saved when you commit.
 
@@ -26,7 +33,7 @@ pip install sqlalchemy-pydantic-json
 uv add sqlalchemy-pydantic-json
 ```
 
-Requires Python 3.11+, SQLAlchemy 2.0.14+ and Pydantic 2.11+. Tested with SQLite, PostgreSQL and
+Requires Python 3.11+, SQLAlchemy 2.0.22+ and Pydantic 2.11+. Tested with SQLite, PostgreSQL and
 MariaDB, with both `Session` and `AsyncSession`.
 
 **Using Alembic?** Then also do the [one-time Alembic setup](#alembic-setup) below. Without it,
@@ -132,6 +139,9 @@ settings: Mapped[Settings] = mapped_column(
 
 A type *class* such as `JSONB` automatically gets `none_as_null=True`, so that `None` is stored as
 SQL `NULL`. A type *instance* is used as is, so pass `none_as_null=True` yourself, as above.
+
+On MySQL the generic `JSON` type maps to its native JSON type; on MariaDB, where `JSON` is the
+server's own alias for `LONGTEXT` with a validity check, it maps to that.
 
 ## Querying inside the JSON
 
@@ -328,6 +338,9 @@ with SQLModelSession(engine) as session:
 - [SQLModel](https://sqlmodel.tiangolo.com/): Pydantic and SQLAlchemy in one model class, but no
   built-in change tracking for Pydantic models in JSON columns. This package adds it
   ([see above](#using-with-sqlmodel)).
+- [The `TypeDecorator` recipe](https://gist.github.com/imankulov/4051b7805ad737ace7d8de3d3f934d6b)
+  that gets passed around: it converts models to and from JSON, but doesn't notice in-place changes,
+  so you still call `flag_modified()` yourself.
 - [activemodel](https://github.com/iloveitaly/activemodel): an ActiveRecord-style framework on top
   of SQLModel. Its `PydanticJSONMixin` also tracks changes in Pydantic models in JSON columns, by
   comparing snapshots of the JSON when the session commits. It requires SQLModel, and a change

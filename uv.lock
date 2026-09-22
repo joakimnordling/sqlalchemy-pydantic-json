@@ -1111,7 +1111,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "pydantic", specifier = ">=2.11" },
-    { name = "sqlalchemy", specifier = ">=2.0.14" },
+    { name = "sqlalchemy", specifier = ">=2.0.22" },
 ]
 
 [package.metadata.requires-dev]

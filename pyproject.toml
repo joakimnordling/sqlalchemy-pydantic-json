@@ -1,14 +1,14 @@
 [project]
 name = "sqlalchemy-pydantic-json"
 version = "0.0.1a1"
-description = "Pydantic v2 models in SQLAlchemy JSON columns with automatic mutation tracking"
+description = "Pydantic models in SQLAlchemy JSON columns, with automatic mutation tracking"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Joakim Nordling", email = "joakim.nordling@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
-    "sqlalchemy>=2.0.14",  # the lowest CI can test: the sqlmodel dev dependency needs it
+    "sqlalchemy>=2.0.22",  # 2.0.22: Session.get_one()
     "pydantic>=2.11",  # 2.11: model_validate(by_alias=..., by_name=...)
 ]
 keywords = ["sqlalchemy", "pydantic", "json", "jsonb", "mutable", "mutation-tracking", "orm"]
@@ -88,7 +88,7 @@ ignore = ["RUF012"]
 
 [tool.mypy]
 strict = true
-files = ["src", "tests/typing"]
+files = ["src", "tests"]  # tests/typing included: it must type-check like a user's code
 cache_dir = ".cache/mypy"
 # The casts are there for pyright, which narrows isinstance() on Any to list[Unknown]
 # etc.; mypy narrows to list[Any] and would call them redundant.

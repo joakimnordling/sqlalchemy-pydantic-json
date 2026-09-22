@@ -48,16 +48,14 @@ def test_async_session(async_url: str, expire_on_commit: bool) -> None:
             async with AsyncSession(engine, expire_on_commit=expire_on_commit) as s:
                 s.add(User(id=1))
                 await s.commit()
-                user = await s.get(User, 1)
-                assert user is not None
+                user = await s.get_one(User, 1)
                 user.settings.tags.append("x")
                 user.settings.address.city = "Espoo"
                 assert user in s.dirty
                 await s.commit()
 
             async with AsyncSession(engine) as s:
-                user = await s.get(User, 1)
-                assert user is not None
+                user = await s.get_one(User, 1)
                 assert user.settings == Settings(tags=["x"], address=Address(city="Espoo"))
 
             async with engine.begin() as conn:
