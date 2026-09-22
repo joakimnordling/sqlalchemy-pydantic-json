@@ -1,6 +1,6 @@
 [project]
 name = "sqlalchemy-pydantic-json"
-version = "0.0.1a1"
+version = "0.1.0"
 description = "Pydantic models in SQLAlchemy JSON columns, with automatic mutation tracking"
 readme = "README.md"
 license = "MIT"
@@ -13,7 +13,7 @@ dependencies = [
 ]
 keywords = ["sqlalchemy", "pydantic", "json", "jsonb", "mutable", "mutation-tracking", "orm"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Framework :: Pydantic :: 2",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
