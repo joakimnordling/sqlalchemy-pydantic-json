@@ -64,8 +64,10 @@ to report unneeded ignores. So if a planted error stops being detected, the chec
 
 ## Linting and formatting
 
-[ruff](https://docs.astral.sh/ruff/) does both, and runs as part of pre-commit. Pre-commit also runs
-[zizmor](https://docs.zizmor.sh/), which checks the GitHub Actions workflows for security problems.
+[ruff](https://docs.astral.sh/ruff/) does both, and runs as part of pre-commit. Pre-commit also checks
+the GitHub Actions workflows: [zizmor](https://docs.zizmor.sh/) for security problems, and
+[actionlint](https://github.com/rhysd/actionlint) for mistakes, including shellcheck on the `run:`
+scripts. actionlint's first run takes a minute or so, while pre-commit downloads Go and builds it.
 To run all hooks by hand:
 
 ```bash
