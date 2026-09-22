@@ -83,7 +83,9 @@ jobs:
           else
             footer="**Full changelog:** $changelog"
           fi
+          prerelease=()
+          case "$GITHUB_REF_NAME" in *a*|*b*|*rc*) prerelease=(--prerelease);; esac
           gh release create "$GITHUB_REF_NAME" dist/* \
             --title "$GITHUB_REF_NAME" \
             --notes "${notes:+$notes$'\n\n'}$footer" \
-            $(case "$GITHUB_REF_NAME" in *a*|*b*|*rc*) echo --prerelease;; esac)
+            "${prerelease[@]}"

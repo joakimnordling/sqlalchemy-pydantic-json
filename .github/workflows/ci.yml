@@ -113,4 +113,4 @@ jobs:
       - name: Versions
         run: uv run python -c "import sys, sqlalchemy, pydantic, alembic; print(sys.version, sqlalchemy.__version__, pydantic.VERSION, alembic.__version__)"
       - name: pytest
-        run: uv run pytest --cov --cov-report=term --cov-report=markdown-append:$GITHUB_STEP_SUMMARY
+        run: uv run pytest --cov --cov-report=term "--cov-report=markdown-append:$GITHUB_STEP_SUMMARY"
