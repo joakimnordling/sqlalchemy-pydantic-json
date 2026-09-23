@@ -8,12 +8,23 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- `EmbeddedPydanticRootModel`: Pydantic's `RootModel` for columns whose value is a list or a
+  union of models, e.g. `class Payment(EmbeddedPydanticRootModel[Card | Invoice])`. The list or
+  model is its `root` attribute, and changes to it are tracked. Assigning a plain value (a list,
+  one of the union's models, ...) to such a column validates it into the model.
+- Tests for generic models, discriminated unions, and validators and serializers.
+
 ### Changed
 
 - Requires Pydantic 2.12 or later (was 2.11).
 
 ### Fixed
 
+- Models with `extra="allow"`: assigning, changing or deleting an extra value now marks the row
+  as changed, at any depth. Before, assigning one was lost unless something else in the row
+  changed too.
 - Computed fields (`@computed_field`) are no longer stored in the JSON. A model with
   `extra="forbid"` and a computed field, at any depth, couldn't load its own rows. Rows already
   stored with computed values still load, unless the model forbids extra keys: resave them, or

@@ -18,7 +18,9 @@ def test_readme_examples_run() -> None:
     text = README.read_text()
     blocks = [m for m in BLOCK.finditer(text) if m["before"].strip() != SKIP]
     assert len(blocks) >= 3  # the pattern still finds the examples
-    namespace: dict[str, object] = {}
+    # like a module: without `__name__`, classes get the module "builtins", and Pydantic then
+    # fails to validate a discriminated union of them
+    namespace: dict[str, object] = {"__name__": "readme"}
     try:
         for match in blocks:
             line = text.count("\n", 0, match.start("code")) + 1

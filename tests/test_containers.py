@@ -141,6 +141,16 @@ def test_deleted_field_is_saved_and_reloads_as_its_default(
     assert reload(engine).theme == "light"
 
 
+def test_other_fields_stay_tracked_after_a_field_is_deleted(session: Session) -> None:
+    settings = get_user(session).settings
+    items = settings.items
+    delattr(settings, "items")
+    session.commit()
+    items.append(Item())  # no longer in the model
+    assert get_user(session) not in session.dirty
+    assert changes(session, lambda st: setattr(st.by_key["a"], "name", "edited"))
+
+
 # --- invalid assignments -------------------------------------------------------------------------
 
 

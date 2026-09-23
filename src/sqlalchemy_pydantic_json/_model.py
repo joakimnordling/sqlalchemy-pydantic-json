@@ -24,22 +24,23 @@ from __future__ import annotations
 
 import functools
 import weakref
-from collections.abc import Callable, Iterable
-from typing import Any, Protocol, Self, SupportsIndex, TypeVar, cast, overload
+from collections.abc import Callable, Iterable, Iterator
+from typing import Any, Generic, Protocol, Self, SupportsIndex, TypeVar, cast, overload
 
-from pydantic import AliasChoices, AliasPath, BaseModel, PrivateAttr
+from pydantic import AliasChoices, AliasPath, BaseModel, PrivateAttr, RootModel
 from pydantic.fields import FieldInfo
 from sqlalchemy import JSON, Dialect
 from sqlalchemy.ext.mutable import Mutable, MutableDict, MutableList, MutableSet
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.types import TypeDecorator, TypeEngine
 
-__all__ = ["EmbeddedPydanticModel", "PydanticJSON"]
+__all__ = ["EmbeddedPydanticModel", "EmbeddedPydanticRootModel", "PydanticJSON"]
 
 _M = TypeVar("_M", bound=BaseModel)
 _T = TypeVar("_T")
 _KT = TypeVar("_KT")
 _VT = TypeVar("_VT")
+_RootT = TypeVar("_RootT")
 
 
 # --------------------------------------------------------------------------
@@ -178,12 +179,23 @@ class _ParentLinks:
 
 def _holds(parent: _Parent, child: object) -> bool:
     if isinstance(parent, EmbeddedPydanticModel):
-        d = vars(parent)
-        return any(d.get(name) is child for name in type(parent).model_fields)
+        return any(values[name] is child for values, name in _model_values(parent))
     if isinstance(parent, _TrackedDict):
         return any(v is child for v in cast("_TrackedDict[Any, Any]", parent).values())
     # the only other parents are lists (set items are never linked)
     return any(v is child for v in cast("_TrackedList[Any]", parent))
+
+
+def _model_values(model: EmbeddedPydanticModel) -> Iterator[tuple[dict[str, Any], str]]:
+    """Where `model` keeps each of its values: its fields, and its extra values (extra="allow")."""
+    d = vars(model)
+    for name in type(model).model_fields:
+        if name in d:  # missing after `del model.field`
+            yield d, name
+    extra = model.__pydantic_extra__
+    if extra:
+        for name in extra:
+            yield extra, name
 
 
 def _link(value: Any, parent: _Parent) -> Any:
@@ -296,16 +308,19 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
         self._link_fields()
 
     def _link_fields(self) -> None:
-        d = vars(self)
-        for name in type(self).model_fields:
-            d[name] = _link(d[name], self)
+        for values, name in list(_model_values(self)):
+            values[name] = _link(values[name], self)
 
     def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
         if name in type(self).model_fields:
-            d = vars(self)
-            d[name] = _link(d[name], self)
-            self._notify()
+            values = vars(self)
+        elif self.__pydantic_extra__ is not None and name in self.__pydantic_extra__:
+            values = self.__pydantic_extra__
+        else:  # a private attribute
+            return
+        values[name] = _link(values[name], self)
+        self._notify()
 
     def __delattr__(self, name: str) -> None:
         super().__delattr__(name)
@@ -332,11 +347,10 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
     # --- copies are independent: not linked to the original's parents/rows ---
     def __copy__(self) -> Self:
         new = super().__copy__()
-        d = vars(new)
-        for name in type(new).model_fields:  # a shallow copy shares containers; give it its own
-            v = d[name]
+        for values, name in _model_values(new):  # a shallow copy shares containers; give it its own
+            v = values[name]
             if isinstance(v, list | dict | set):
-                d[name] = cast("list[Any] | dict[Any, Any] | set[Any]", v).copy()
+                values[name] = cast("list[Any] | dict[Any, Any] | set[Any]", v).copy()
         return new._detached()
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
@@ -362,7 +376,8 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
     def coerce(cls, key: str, value: Any) -> Self | None:
         if value is None or isinstance(value, cls):
             return value
-        if isinstance(value, dict):
+        # a RootModel's root can be anything: a list, a submodel, ...
+        if isinstance(value, dict) or issubclass(cls, RootModel):
             return _validate(cls, value)
         return cast("Self | None", super().coerce(key, value))
 
@@ -378,3 +393,16 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
             JSON(none_as_null=True).with_variant(JSONB(none_as_null=True), "postgresql")
         """
         return cast("PydanticJSON[Self]", cls.as_mutable(PydanticJSON(cls, json_type)))
+
+
+class EmbeddedPydanticRootModel(EmbeddedPydanticModel, RootModel[_RootT], Generic[_RootT]):
+    """
+    Base class for a column whose value is a list, a union of models, ...: Pydantic's RootModel.
+
+    The list or model itself is the ``root`` attribute, e.g. ``items.root.append(item)``::
+
+        class Items(EmbeddedPydanticRootModel[list[Item]]):
+            pass
+    """
+
+    # EmbeddedPydanticModel comes first: its copying and pickling must win over RootModel's.

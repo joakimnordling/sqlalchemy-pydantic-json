@@ -159,6 +159,70 @@ with Session(engine) as session:
 See SQLAlchemy's [JSON type documentation](https://docs.sqlalchemy.org/en/20/core/type_basics.html#sqlalchemy.types.JSON)
 for the operators, and what each database supports.
 
+## Lists and unions as the column (root models)
+
+For a column that holds a list, or one of several models, use `EmbeddedPydanticRootModel`, this
+package's version of Pydantic's
+[`RootModel`](https://docs.pydantic.dev/latest/concepts/models/#rootmodel-and-custom-root-types).
+As with any root model, the list or model itself is its `root` attribute
+(`customer.addresses.root.append(...)`), and changes there are tracked like changes to any other
+field:
+
+```python
+from typing import Annotated, Literal
+
+from pydantic import Field
+
+from sqlalchemy_pydantic_json import EmbeddedPydanticRootModel
+
+
+class Card(EmbeddedPydanticModel):
+    kind: Literal["card"] = "card"
+    last_digits: str = ""
+
+
+class Invoice(EmbeddedPydanticModel):
+    kind: Literal["invoice"] = "invoice"
+    emails: list[str] = []
+
+
+AnyPayment = Annotated[Card | Invoice, Field(discriminator="kind")]
+
+
+class Payment(EmbeddedPydanticRootModel[AnyPayment]):
+    pass
+
+
+class Addresses(EmbeddedPydanticRootModel[list[Address]]):
+    pass
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    payment: Mapped[Payment] = mapped_column(Payment.column(), default=lambda: Payment(Card()))
+    addresses: Mapped[Addresses] = mapped_column(Addresses.column(), default=lambda: Addresses([]))
+
+
+Base.metadata.create_all(engine)
+
+with Session(engine) as session:
+    customer = Customer(id=1)
+    session.add(customer)
+    session.commit()
+
+    customer.addresses.root.append(Address(city="Tampere"))
+    invoice = Invoice(emails=["billing@example.com"])
+    customer.payment = Payment(invoice)  # or `= invoice`: it's validated into a Payment
+    invoice.emails.append("finance@example.com")  # tracked: it's the value in the column
+    assert customer in session.dirty
+    session.commit()
+```
+
+Generic models (`class Box(EmbeddedPydanticModel, Generic[T])`) work too, and so do models with
+`extra="allow"`: their extra values are stored and tracked like fields.
+
 ## Aliases (e.g. camelCase)
 
 Pydantic aliases decide the key names in the stored JSON. For camelCase, make your own base class
