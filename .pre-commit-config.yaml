@@ -4,6 +4,8 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: [--fix=lf]
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
@@ -27,3 +29,18 @@ repos:
     rev: v0.0.82
     hooks:
       - id: ty
+
+  # Lints the GitHub Actions workflows for security problems.
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.30.1
+    hooks:
+      - id: zizmor
+
+  # Checks the workflows for mistakes (syntax, expressions, and the `run:` scripts via shellcheck).
+  # pre-commit installs Go for it, and shellcheck as a Go build.
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        additional_dependencies:
+          - github.com/wasilibs/go-shellcheck/cmd/shellcheck@v0.11.1

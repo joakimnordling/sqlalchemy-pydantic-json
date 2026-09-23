@@ -4,6 +4,9 @@ Thanks for your interest! Bug reports, questions and pull requests are welcome o
 [GitHub](https://github.com/joakimnordling/sqlalchemy-pydantic-json). For anything bigger than a
 small fix, please open an issue first so we can agree on the approach.
 
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md). Please report
+security problems privately, as described in [SECURITY.md](SECURITY.md), not in a public issue.
+
 ## Setup
 
 The project uses [uv](https://docs.astral.sh/uv/) for everything.
@@ -61,8 +64,11 @@ to report unneeded ignores. So if a planted error stops being detected, the chec
 
 ## Linting and formatting
 
-[ruff](https://docs.astral.sh/ruff/) does both, and runs as part of pre-commit. To run all hooks by
-hand:
+[ruff](https://docs.astral.sh/ruff/) does both, and runs as part of pre-commit. Pre-commit also checks
+the GitHub Actions workflows: [zizmor](https://docs.zizmor.sh/) for security problems, and
+[actionlint](https://github.com/rhysd/actionlint) for mistakes, including shellcheck on the `run:`
+scripts. actionlint's first run takes a minute or so, while pre-commit downloads Go and builds it.
+To run all hooks by hand:
 
 ```bash
 uv run pre-commit run --all-files
@@ -71,17 +77,22 @@ uv run pre-commit run --all-files
 ## Releasing
 
 Publishing happens on GitHub Actions through PyPI trusted publishing (no tokens), when a version tag
-is pushed:
+is pushed. `main` only accepts changes through pull requests, so the release commit goes through one
+too, and the tag goes on `main` after it's merged:
 
 ```bash
+git switch -c release-0.1.0
 uv version 0.1.0          # or e.g. 0.1.0a1 for a pre-release
 # move the CHANGELOG's Unreleased entries under "## [0.1.0] - <date>"
-git commit -am "Release 0.1.0" && git push
+git commit -am "Release 0.1.0" && git push -u origin release-0.1.0
+# open a PR, wait for CI, merge it; then:
+git switch main && git pull
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
 The workflow checks that the tag matches the version in `pyproject.toml`, builds and checks the
-package, publishes it to PyPI and creates a GitHub release with that version's changelog section.
+package, publishes it to PyPI and creates a GitHub release with that version's changelog section
+and a link to the full changelog.
 Versions with `a`, `b` or `rc` in them are marked as pre-releases. Installers skip those in favour
 of stable versions, but note that they do install a pre-release when the project has no stable
 release at all.

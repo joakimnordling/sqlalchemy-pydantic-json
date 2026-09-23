@@ -77,7 +77,8 @@ target-version = "py311"
 
 [tool.ruff.lint]
 # D213: a multi-line docstring starts its text on the line after the opening quotes
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "D213"]
+# S: security checks (bandit's rules); T10: leftover debugger calls
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "D213", "S", "T10"]
 # Pydantic fields with mutable defaults are fine (Pydantic copies them); ruff only knows that
 # for direct BaseModel subclasses.
 ignore = ["RUF012"]
@@ -85,6 +86,8 @@ ignore = ["RUF012"]
 [tool.ruff.lint.per-file-ignores]
 # the typing tests contain deliberately wrong lines
 "tests/typing/*" = ["F841"]
+# tests use plain asserts, and pickle and exec on purpose
+"tests/*" = ["S"]
 
 [tool.mypy]
 strict = true

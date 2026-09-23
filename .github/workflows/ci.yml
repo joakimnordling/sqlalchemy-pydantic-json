@@ -23,16 +23,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           cache-suffix: pre-commit
       - run: uv sync --locked
+      # the hook environments; building actionlint and shellcheck takes about a minute
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml', '.python-version') }}
       - run: uv run pre-commit run --all-files --show-diff-on-failure
 
   typecheck:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           cache-suffix: typecheck
@@ -97,6 +106,8 @@ jobs:
       UV_RESOLUTION: ${{ matrix.deps == 'lowest' && 'lowest-direct' || 'highest' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           # one cache per kind of job; with the default key they all race to save the same one
@@ -107,4 +118,4 @@ jobs:
       - name: Versions
         run: uv run python -c "import sys, sqlalchemy, pydantic, alembic; print(sys.version, sqlalchemy.__version__, pydantic.VERSION, alembic.__version__)"
       - name: pytest
-        run: uv run pytest --cov --cov-report=term --cov-report=markdown-append:$GITHUB_STEP_SUMMARY
+        run: uv run pytest --cov --cov-report=term "--cov-report=markdown-append:$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,39 @@
+name: Bug report
+description: Something doesn't work as documented, e.g. a change isn't saved, or a row is marked dirty when it shouldn't be.
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: Minimal example
+      description: >-
+        The smallest self-contained script that shows the problem, ideally against in-memory SQLite
+        (`create_engine("sqlite://")`). Include the model, the table and the session code.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output or traceback
+      render: text
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: >-
+        Run `python -c "import sys, sqlalchemy, pydantic; from importlib.metadata import version;
+        print(version('sqlalchemy-pydantic-json'), sqlalchemy.__version__, pydantic.VERSION, sys.version)"`
+        and add the database and driver you use.
+      placeholder: |
+        sqlalchemy-pydantic-json 0.1.0, SQLAlchemy 2.0.54, Pydantic 2.13.0, Python 3.13.7
+        PostgreSQL 18 with psycopg 3.3
+    validations:
+      required: true
