@@ -24,6 +24,8 @@ may contain breaking changes.
 
 ### Fixed
 
+- Changes to lists, dicts and models inside tuples (also named tuples, and tuples inside lists
+  and dicts) weren't tracked, and were lost unless something else in the row changed too.
 - Models inside lists weren't tracked after `copy.deepcopy()`, `model_copy(deep=True)` or
   pickling (e.g. when caching rows): changes to them were lost. Items in dicts were fine.
 - Models with `extra="allow"`: assigning, changing or deleting an extra value now marks the row

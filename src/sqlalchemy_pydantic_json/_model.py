@@ -159,31 +159,69 @@ class _Link(ABC, Generic[_P, _H]):
 
     Checking the hint is a single lookup. When the child has moved (after an insert, a sort,
     ...), the parent is searched instead, and the hint is updated.
+
+    A tuple can't be a parent: it never changes, and can't hold links. The items inside a tuple
+    are linked to the tuple's parent instead, and `path` holds their indexes in the tuple (and in
+    the tuples inside it).
     """
 
-    __slots__ = ("hint", "parent")
+    __slots__ = ("hint", "parent", "path")
     parent: weakref.ref[_P]
     hint: _H
+    path: tuple[int, ...]
 
-    def __init__(self, parent: _P, hint: _H) -> None:
+    def __init__(self, parent: _P, hint: _H, path: tuple[int, ...] = ()) -> None:
         self.parent = weakref.ref(parent)
         self.hint = hint
+        self.path = path
 
     def notify(self, child: object) -> bool:
         """Notify the parent if it still holds `child`; False if it doesn't (or is gone)."""
         parent = self.parent()
         if parent is None:
             return False
-        if not (self._held_at_hint(parent, child) or self._find_and_update_hint(parent, child)):
+        held = _in_tuples(self._at_hint(parent), self.path) is child
+        if not (held or self._find_and_update_hint(parent, child)):
             return False
         parent._notify()
         return True
 
+    # None if there's no such value: never the child, which is always a model or container
     @abstractmethod
-    def _held_at_hint(self, parent: _P, child: object) -> bool: ...
+    def _at_hint(self, parent: _P) -> object: ...
 
     @abstractmethod
     def _find_and_update_hint(self, parent: _P, child: object) -> bool: ...
+
+    def _find_in(self, values: Iterable[tuple[_H, object]], child: object) -> bool:
+        """Point the hint at `child` among the (hint, value) pairs, or inside a tuple there."""
+        for hint, value in values:
+            path = _path_to(child, value)
+            if path is not None:
+                self.hint, self.path = hint, path
+                return True
+        return False
+
+
+def _in_tuples(value: object, path: tuple[int, ...]) -> object:
+    """The item at `path` in `value` and the tuples inside it (`value` itself if empty), or None."""
+    for i in path:
+        if not isinstance(value, tuple) or i >= len(cast("tuple[object, ...]", value)):
+            return None
+        value = cast("tuple[object, ...]", value)[i]
+    return value
+
+
+def _path_to(child: object, value: object) -> tuple[int, ...] | None:
+    """Where `child` is in `value`: () for `value` itself, or its path in tuples; else None."""
+    if value is child:
+        return ()
+    if isinstance(value, tuple):
+        for i, item in enumerate(cast("tuple[object, ...]", value)):
+            path = _path_to(child, item)
+            if path is not None:
+                return (i, *path)
+    return None
 
 
 _NEAR = 8  # how far an insert or delete near an item usually moves it
@@ -194,24 +232,28 @@ class _IndexLink(_Link["_TrackedList[Any]", int]):
 
     __slots__ = ()
 
-    def _held_at_hint(self, parent: _TrackedList[Any], child: object) -> bool:
-        return self.hint < len(parent) and parent[self.hint] is child
+    def _at_hint(self, parent: _TrackedList[Any]) -> object:
+        return parent[self.hint] if self.hint < len(parent) else None
 
     def _find_and_update_hint(self, parent: _TrackedList[Any], child: object) -> bool:
-        index = self._find_near_hint(parent, child)
-        if index is None:
-            index = _index_of(parent, child)
+        return (
+            self._find_in(self._near_hint(parent), child)
+            or self._find_directly(parent, child)
+            or self._find_in(enumerate(parent), child)  # inside a tuple, or not there at all
+        )
+
+    def _near_hint(self, parent: _TrackedList[Any]) -> Iterator[tuple[int, object]]:
+        """The items around the old index: an insert or delete near the child moves it a little."""
+        for i in range(max(self.hint - _NEAR, 0), min(self.hint + _NEAR + 1, len(parent))):
+            yield i, parent[i]
+
+    def _find_directly(self, parent: _TrackedList[Any], child: object) -> bool:
+        """Quickly find `child` itself (not inside a tuple) anywhere in the list."""
+        index = _index_of(parent, child)
         if index is None:
             return False
-        self.hint = index
+        self.hint, self.path = index, ()
         return True
-
-    def _find_near_hint(self, parent: _TrackedList[Any], child: object) -> int | None:
-        """Search around the old index: an insert or delete near the child moves it a little."""
-        for i in range(max(self.hint - _NEAR, 0), min(self.hint + _NEAR + 1, len(parent))):
-            if parent[i] is child:
-                return i
-        return None
 
 
 def _index_of(items: list[Any], value: object) -> int | None:
@@ -225,16 +267,11 @@ class _KeyLink(_Link["_TrackedDict[Any, Any]", Hashable]):
 
     __slots__ = ()
 
-    def _held_at_hint(self, parent: _TrackedDict[Any, Any], child: object) -> bool:
-        # a missing key gives None, which is never the child (always a model or container)
-        return parent.get(self.hint) is child
+    def _at_hint(self, parent: _TrackedDict[Any, Any]) -> object:
+        return parent.get(self.hint)
 
     def _find_and_update_hint(self, parent: _TrackedDict[Any, Any], child: object) -> bool:
-        for key, value in parent.items():  # not next(..., None): None can be a key
-            if value is child:
-                self.hint = key
-                return True
-        return False
+        return self._find_in(parent.items(), child)
 
 
 class _FieldLink(_Link["EmbeddedPydanticModel", str]):
@@ -242,20 +279,14 @@ class _FieldLink(_Link["EmbeddedPydanticModel", str]):
 
     __slots__ = ()
 
-    def _held_at_hint(self, parent: EmbeddedPydanticModel, child: object) -> bool:
-        # a missing field gives None, which is never the child (always a model or container)
+    def _at_hint(self, parent: EmbeddedPydanticModel) -> object:
+        value = vars(parent).get(self.hint)
         extra = parent.__pydantic_extra__
-        return vars(parent).get(self.hint) is child or (
-            extra is not None and extra.get(self.hint) is child
-        )
+        return extra.get(self.hint) if value is None and extra else value
 
     def _find_and_update_hint(self, parent: EmbeddedPydanticModel, child: object) -> bool:
-        found = (name for values, name in _model_values(parent) if values[name] is child)
-        name = next(found, None)
-        if name is None:
-            return False
-        self.hint = name
-        return True
+        values = ((name, values[name]) for values, name in _model_values(parent))
+        return self._find_in(values, child)
 
 
 class _ParentLinks:
@@ -300,14 +331,25 @@ def _model_values(model: EmbeddedPydanticModel) -> Iterator[tuple[dict[str, Any]
             yield extra, name
 
 
-def _link(value: Any, link_type: type[_Link[_P, _H]], parent: _P, hint: _H) -> Any:
+_SCALARS = frozenset({str, int, float, bool, type(None)})
+
+
+def _link(
+    value: Any, link_type: type[_Link[_P, _H]], parent: _P, hint: _H, path: tuple[int, ...] = ()
+) -> Any:
     """Return `value` with tracking enabled, linked to `parent`, which holds it at `hint`."""
-    # the link is only created for a value that is linked (not for strings, numbers, ...)
+    if type(value) in _SCALARS:  # the most common values: nothing to track
+        return value
+    # the link is only created for a value that is linked
     tracked: _TrackedList[Any] | _TrackedDict[Any, Any] | _TrackedSet[Any]
     if isinstance(value, EmbeddedPydanticModel):
         # add, not replace: the same instance may live in several places
-        value._links.add(link_type(parent, hint))
+        value._links.add(link_type(parent, hint, path))
         return value
+    if isinstance(value, tuple):  # not a parent: its items are linked to the tuple's parent
+        items = cast("tuple[Any, ...]", value)
+        linked = [_link(item, link_type, parent, hint, (*path, i)) for i, item in enumerate(items)]
+        return items if all(map(operator.is_, linked, items)) else _rebuilt(items, linked)
     if isinstance(value, _TrackedList | _TrackedDict | _TrackedSet):
         tracked = cast("_TrackedList[Any] | _TrackedDict[Any, Any] | _TrackedSet[Any]", value)
     elif isinstance(value, list):
@@ -321,8 +363,24 @@ def _link(value: Any, link_type: type[_Link[_P, _H]], parent: _P, hint: _H) -> A
         tracked = _TrackedSet(cast("set[Any]", value))
     else:
         return value
-    tracked._links.add(link_type(parent, hint))
+    tracked._links.add(link_type(parent, hint, path))
     return tracked
+
+
+def _rebuilt(original: tuple[Any, ...], items: list[Any]) -> tuple[Any, ...]:
+    """A tuple of the same type as `original` (e.g. a named tuple), holding `items`."""
+    make_named_tuple = getattr(original, "_make", None)
+    return make_named_tuple(items) if make_named_tuple else type(original)(items)
+
+
+def _own_containers(value: Any) -> Any:
+    """For a shallow copy: `value`, with its lists, dicts and sets copied (also inside tuples)."""
+    if isinstance(value, list | dict | set):
+        return cast("list[Any] | dict[Any, Any] | set[Any]", value).copy()
+    if isinstance(value, tuple):
+        items = cast("tuple[Any, ...]", value)
+        return _rebuilt(items, [_own_containers(item) for item in items])
+    return value
 
 
 # --------------------------------------------------------------------------
@@ -387,8 +445,7 @@ class _TrackedList(_TrackedContainer, MutableList[_T]):  # ty: ignore[invalid-me
 
     def _update_positions(self) -> None:
         for i, item in enumerate(self):
-            if isinstance(item, EmbeddedPydanticModel | _TrackedContainer):
-                item._links.add(_IndexLink(self, i))
+            _link(item, _IndexLink, self, i)  # already tracked: only updates the links
 
 
 class _TrackedDict(_TrackedContainer, MutableDict[_KT, _VT]):
@@ -478,9 +535,7 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
     def __copy__(self) -> Self:
         new = super().__copy__()
         for values, name in _model_values(new):  # a shallow copy shares containers; give it its own
-            v = values[name]
-            if isinstance(v, list | dict | set):
-                values[name] = cast("list[Any] | dict[Any, Any] | set[Any]", v).copy()
+            values[name] = _own_containers(values[name])
         return new._detached()
 
     def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
