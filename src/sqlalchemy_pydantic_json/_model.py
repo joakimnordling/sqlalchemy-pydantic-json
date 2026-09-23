@@ -65,7 +65,10 @@ class PydanticJSON(TypeDecorator[_M]):
     def process_bind_param(self, value: Any, dialect: Dialect) -> Any:
         if value is None:
             return None
-        return _validate(self.model, value).model_dump(mode="json", by_alias=True)
+        # Computed fields are derived again on load; stored, they'd fail models with extra="forbid".
+        return _validate(self.model, value).model_dump(
+            mode="json", by_alias=True, exclude_computed_fields=True
+        )
 
     def process_result_value(self, value: Any, dialect: Dialect) -> _M | None:
         return None if value is None else _validate(self.model, value)

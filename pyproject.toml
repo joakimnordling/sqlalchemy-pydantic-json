@@ -9,7 +9,7 @@ authors = [{ name = "Joakim Nordling", email = "joakim.nordling@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "sqlalchemy>=2.0.22",  # 2.0.22: Session.get_one()
-    "pydantic>=2.11",  # 2.11: model_validate(by_alias=..., by_name=...)
+    "pydantic>=2.12",  # 2.12: model_dump(exclude_computed_fields=...)
 ]
 keywords = ["sqlalchemy", "pydantic", "json", "jsonb", "mutable", "mutation-tracking", "orm"]
 classifiers = [

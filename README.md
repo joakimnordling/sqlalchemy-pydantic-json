@@ -33,7 +33,7 @@ pip install sqlalchemy-pydantic-json
 uv add sqlalchemy-pydantic-json
 ```
 
-Requires Python 3.11+, SQLAlchemy 2.0.22+ and Pydantic 2.11+. Tested with SQLite, PostgreSQL and
+Requires Python 3.11+, SQLAlchemy 2.0.22+ and Pydantic 2.12+. Tested with SQLite, PostgreSQL and
 MariaDB, with both `Session` and `AsyncSession`.
 
 **Using Alembic?** Then also do the [one-time Alembic setup](#alembic-setup) below. Without it,
@@ -303,6 +303,9 @@ with SQLModelSession(engine) as session:
   a model, existing rows must still validate: give new fields a default (or update the stored
   rows), and handle renamed or removed fields, for example with a `model_validator(mode="before")`
   or a hand-written data migration.
+- **Computed fields and excluded fields aren't stored.** A `@computed_field` is calculated again
+  when the row is loaded, so you can't query it inside the JSON. A field with `Field(exclude=True)`
+  isn't saved at all, and loads as its default.
 - **Bulk and Core statements bypass tracking,** as with any SQLAlchemy attribute:
   `session.execute(update(User).values(...))` writes what you give it, and doesn't know about
   in-place changes.
@@ -319,7 +322,8 @@ with SQLModelSession(engine) as session:
 ## How it works
 
 - `PydanticJSON` is a SQLAlchemy `TypeDecorator` over `JSON`: it validates the model on load and
-  dumps it with `model_dump(mode="json")` on save. On its own it doesn't track anything.
+  dumps it with `model_dump(mode="json", by_alias=True, exclude_computed_fields=True)` on save.
+  On its own it doesn't track anything.
 - `EmbeddedPydanticModel` combines Pydantic's `BaseModel` with SQLAlchemy's `Mutable`, and
   `Model.column()` is `Model.as_mutable(PydanticJSON(Model))`.
 - Whenever a field is set, lists, dicts and sets are wrapped in tracked versions of SQLAlchemy's

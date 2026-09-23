@@ -8,6 +8,17 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Requires Pydantic 2.12 or later (was 2.11).
+
+### Fixed
+
+- Computed fields (`@computed_field`) are no longer stored in the JSON. A model with
+  `extra="forbid"` and a computed field, at any depth, couldn't load its own rows. Rows already
+  stored with computed values still load, unless the model forbids extra keys: resave them, or
+  remove the keys with a data migration.
+
 ## [0.1.0] - 2026-09-22
 
 First release.
