@@ -23,8 +23,11 @@ for the column's model *and* for all of its submodels.
 from __future__ import annotations
 
 import functools
+import operator
 import weakref
-from collections.abc import Callable, Iterable, Iterator
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Hashable, Iterable, Iterator
+from itertools import compress, count, repeat
 from typing import Any, Generic, Protocol, Self, SupportsIndex, TypeVar, cast, overload
 
 from pydantic import AliasChoices, AliasPath, BaseModel, PrivateAttr, RootModel
@@ -38,7 +41,7 @@ __all__ = ["EmbeddedPydanticModel", "EmbeddedPydanticRootModel", "PydanticJSON"]
 
 _M = TypeVar("_M", bound=BaseModel)
 _T = TypeVar("_T")
-_KT = TypeVar("_KT")
+_KT = TypeVar("_KT", bound=Hashable)
 _VT = TypeVar("_VT")
 _RootT = TypeVar("_RootT")
 
@@ -146,24 +149,132 @@ class _Parent(Protocol):
     def _notify(self) -> None: ...
 
 
+_P = TypeVar("_P", bound=_Parent)
+_H = TypeVar("_H")
+
+
+class _Link(ABC, Generic[_P, _H]):
+    """
+    A weak link from a child to a parent, with a hint of where the parent holds the child.
+
+    Checking the hint is a single lookup. When the child has moved (after an insert, a sort,
+    ...), the parent is searched instead, and the hint is updated.
+    """
+
+    __slots__ = ("hint", "parent")
+    parent: weakref.ref[_P]
+    hint: _H
+
+    def __init__(self, parent: _P, hint: _H) -> None:
+        self.parent = weakref.ref(parent)
+        self.hint = hint
+
+    def notify(self, child: object) -> bool:
+        """Notify the parent if it still holds `child`; False if it doesn't (or is gone)."""
+        parent = self.parent()
+        if parent is None:
+            return False
+        if not (self._held_at_hint(parent, child) or self._find_and_update_hint(parent, child)):
+            return False
+        parent._notify()
+        return True
+
+    @abstractmethod
+    def _held_at_hint(self, parent: _P, child: object) -> bool: ...
+
+    @abstractmethod
+    def _find_and_update_hint(self, parent: _P, child: object) -> bool: ...
+
+
+_NEAR = 8  # how far an insert or delete near an item usually moves it
+
+
+class _IndexLink(_Link["_TrackedList[Any]", int]):
+    """A list holds the child, at an index."""
+
+    __slots__ = ()
+
+    def _held_at_hint(self, parent: _TrackedList[Any], child: object) -> bool:
+        return self.hint < len(parent) and parent[self.hint] is child
+
+    def _find_and_update_hint(self, parent: _TrackedList[Any], child: object) -> bool:
+        index = self._find_near_hint(parent, child)
+        if index is None:
+            index = _index_of(parent, child)
+        if index is None:
+            return False
+        self.hint = index
+        return True
+
+    def _find_near_hint(self, parent: _TrackedList[Any], child: object) -> int | None:
+        """Search around the old index: an insert or delete near the child moves it a little."""
+        for i in range(max(self.hint - _NEAR, 0), min(self.hint + _NEAR + 1, len(parent))):
+            if parent[i] is child:
+                return i
+        return None
+
+
+def _index_of(items: list[Any], value: object) -> int | None:
+    """The index of `value` in `items`, compared with `is` (list.index() would use ==), or None."""
+    # the same as `next((i for i, item in enumerate(items) if item is value), None)`, looping in C
+    return next(compress(count(), map(operator.is_, items, repeat(value))), None)
+
+
+class _KeyLink(_Link["_TrackedDict[Any, Any]", Hashable]):
+    """A dict holds the child, under a key."""
+
+    __slots__ = ()
+
+    def _held_at_hint(self, parent: _TrackedDict[Any, Any], child: object) -> bool:
+        # a missing key gives None, which is never the child (always a model or container)
+        return parent.get(self.hint) is child
+
+    def _find_and_update_hint(self, parent: _TrackedDict[Any, Any], child: object) -> bool:
+        for key, value in parent.items():  # not next(..., None): None can be a key
+            if value is child:
+                self.hint = key
+                return True
+        return False
+
+
+class _FieldLink(_Link["EmbeddedPydanticModel", str]):
+    """A model holds the child, in a field or an extra value (extra="allow")."""
+
+    __slots__ = ()
+
+    def _held_at_hint(self, parent: EmbeddedPydanticModel, child: object) -> bool:
+        # a missing field gives None, which is never the child (always a model or container)
+        extra = parent.__pydantic_extra__
+        return vars(parent).get(self.hint) is child or (
+            extra is not None and extra.get(self.hint) is child
+        )
+
+    def _find_and_update_hint(self, parent: EmbeddedPydanticModel, child: object) -> bool:
+        found = (name for values, name in _model_values(parent) if values[name] is child)
+        name = next(found, None)
+        if name is None:
+            return False
+        self.hint = name
+        return True
+
+
 class _ParentLinks:
+    """The links to every parent of a model or container; stale links are dropped lazily."""
+
     __slots__ = ("_refs",)
 
     def __init__(self) -> None:
-        self._refs: dict[int, weakref.ref[_Parent]] = {}
+        self._refs: dict[int, _Link[Any, Any]] = {}
 
-    def add(self, parent: _Parent) -> None:
-        self._refs[id(parent)] = weakref.ref(parent)
+    def add(self, link: _Link[Any, Any]) -> None:
+        self._refs[id(link.parent())] = link
 
     def notify(self, child: object) -> None:
-        for key, ref in list(self._refs.items()):
-            parent = ref()
+        for key, link in list(self._refs.items()):
             # a parent that was garbage collected, or no longer holds the
             # child (popped, replaced, ...), is dropped instead of notified
-            if parent is None or not _holds(parent, child):
+            if not link.notify(child):
                 self._refs.pop(key, None)
-                continue
-            parent._notify()
 
     # Links aren't part of a model's value; Pydantic's `==` compares private attributes too, so
     # without this no two models would ever be equal.
@@ -175,15 +286,6 @@ class _ParentLinks:
     # copies (copy.copy and copy.deepcopy use this too) and pickles start out unlinked
     def __reduce__(self) -> tuple[type[_ParentLinks], tuple[()]]:
         return (_ParentLinks, ())
-
-
-def _holds(parent: _Parent, child: object) -> bool:
-    if isinstance(parent, EmbeddedPydanticModel):
-        return any(values[name] is child for values, name in _model_values(parent))
-    if isinstance(parent, _TrackedDict):
-        return any(v is child for v in cast("_TrackedDict[Any, Any]", parent).values())
-    # the only other parents are lists (set items are never linked)
-    return any(v is child for v in cast("_TrackedList[Any]", parent))
 
 
 def _model_values(model: EmbeddedPydanticModel) -> Iterator[tuple[dict[str, Any], str]]:
@@ -198,11 +300,13 @@ def _model_values(model: EmbeddedPydanticModel) -> Iterator[tuple[dict[str, Any]
             yield extra, name
 
 
-def _link(value: Any, parent: _Parent) -> Any:
-    """Return `value` with tracking enabled, linked to `parent`."""
+def _link(value: Any, link_type: type[_Link[_P, _H]], parent: _P, hint: _H) -> Any:
+    """Return `value` with tracking enabled, linked to `parent`, which holds it at `hint`."""
+    # the link is only created for a value that is linked (not for strings, numbers, ...)
     tracked: _TrackedList[Any] | _TrackedDict[Any, Any] | _TrackedSet[Any]
     if isinstance(value, EmbeddedPydanticModel):
-        value._links.add(parent)  # add, not replace: the same instance may live in several places
+        # add, not replace: the same instance may live in several places
+        value._links.add(link_type(parent, hint))
         return value
     if isinstance(value, _TrackedList | _TrackedDict | _TrackedSet):
         tracked = cast("_TrackedList[Any] | _TrackedDict[Any, Any] | _TrackedSet[Any]", value)
@@ -217,7 +321,7 @@ def _link(value: Any, parent: _Parent) -> Any:
         tracked = _TrackedSet(cast("set[Any]", value))
     else:
         return value
-    tracked._links.add(parent)
+    tracked._links.add(link_type(parent, hint))
     return tracked
 
 
@@ -250,24 +354,46 @@ class _TrackedList(_TrackedContainer, MutableList[_T]):  # ty: ignore[invalid-me
 
     def __setitem__(self, index: SupportsIndex | slice, value: _T | Iterable[_T]) -> None:
         if isinstance(index, slice):
-            value = [_link(x, self) for x in cast("Iterable[_T]", value)]
+            start, stop, step = index.indices(len(self))
+            positions = count(start) if step == 1 else range(start, stop, step)
+            items = cast("Iterable[_T]", value)
+            # not strict: count() never ends; list raises for an extended slice of the wrong size
+            value = [_link(x, _IndexLink, self, p) for p, x in zip(positions, items, strict=False)]
         else:
-            value = _link(value, self)
+            i = operator.index(index)
+            value = _link(value, _IndexLink, self, i + len(self) if i < 0 else i)
         super().__setitem__(index, value)
 
     def append(self, x: _T) -> None:
-        super().append(_link(x, self))
+        super().append(_link(x, _IndexLink, self, len(self)))
 
     def extend(self, x: Iterable[_T]) -> None:
-        super().extend([_link(v, self) for v in x])
+        start = len(self)
+        super().extend([_link(v, _IndexLink, self, start + i) for i, v in enumerate(x)])
 
     def insert(self, i: SupportsIndex, x: _T) -> None:
-        super().insert(i, _link(x, self))
+        n, index = len(self), operator.index(i)
+        position = max(index + n, 0) if index < 0 else min(index, n)  # as list.insert clamps it
+        super().insert(i, _link(x, _IndexLink, self, position))
+
+    # sort() and reverse() move items without __setitem__: update every item's position
+    def sort(self, **kw: Any) -> None:
+        super().sort(**kw)
+        self._update_positions()
+
+    def reverse(self) -> None:
+        super().reverse()
+        self._update_positions()
+
+    def _update_positions(self) -> None:
+        for i, item in enumerate(self):
+            if isinstance(item, EmbeddedPydanticModel | _TrackedContainer):
+                item._links.add(_IndexLink(self, i))
 
 
 class _TrackedDict(_TrackedContainer, MutableDict[_KT, _VT]):
     def __setitem__(self, key: _KT, value: _VT) -> None:
-        super().__setitem__(key, _link(value, self))
+        super().__setitem__(key, _link(value, _KeyLink, self, key))
 
     # same overloads as MutableDict.setdefault
     @overload
@@ -279,10 +405,10 @@ class _TrackedDict(_TrackedContainer, MutableDict[_KT, _VT]):
     def setdefault(self, key: _KT, value: _VT) -> _VT: ...
 
     def setdefault(self, key: _KT, value: object = None) -> object:
-        return super().setdefault(key, _link(value, self))
+        return super().setdefault(key, _link(value, _KeyLink, self, key))
 
     def update(self, *a: Any, **kw: _VT) -> None:
-        super().update({k: _link(v, self) for k, v in dict(*a, **kw).items()})
+        super().update({k: _link(v, _KeyLink, self, k) for k, v in dict(*a, **kw).items()})
 
 
 class _TrackedSet(_TrackedContainer, MutableSet[_T]):  # ty: ignore[invalid-method-override]
@@ -313,7 +439,7 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
 
     def _link_fields(self) -> None:
         for values, name in list(_model_values(self)):
-            values[name] = _link(values[name], self)
+            values[name] = _link(values[name], _FieldLink, self, name)
 
     def __setattr__(self, name: str, value: Any) -> None:
         super().__setattr__(name, value)
@@ -323,7 +449,7 @@ class EmbeddedPydanticModel(Mutable, BaseModel):
             values = self.__pydantic_extra__
         else:  # a private attribute
             return
-        values[name] = _link(values[name], self)
+        values[name] = _link(values[name], _FieldLink, self, name)
         self._notify()
 
     def __delattr__(self, name: str) -> None:

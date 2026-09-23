@@ -396,6 +396,9 @@ with SQLModelSession(engine) as session:
   parent to parent until it reaches the model in the column, which marks the row as changed. A
   parent that no longer holds the value (after a `pop()` or reassignment, say) is skipped and
   forgotten, so values can be moved around and shared freely.
+- Each link also remembers where the parent holds the value (a list index, dict key or field
+  name), so checking it is a single lookup, even in long lists. Only a value that has moved is
+  searched for, once.
 
 ## Alternatives
 

@@ -19,6 +19,8 @@ may contain breaking changes.
 ### Changed
 
 - Requires Pydantic 2.12 or later (was 2.11).
+- Faster tracking in long lists: a change to an item no longer searches the whole list. Changing
+  every model in a list of 10,000 went from about 1.2 s to 50 ms.
 
 ### Fixed
 
