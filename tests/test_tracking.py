@@ -267,6 +267,21 @@ def test_copy_is_detached(
     assert (a in s.dirty) is (not deep)
 
 
+@pytest.mark.parametrize(("make_copy", "deep"), COPIES)
+def test_copy_assigned_to_other_row_tracks_models_in_its_lists(
+    fresh: Fresh, make_copy: Callable[[Settings], Settings], deep: bool
+) -> None:
+    s, a, b = fresh(False)
+    a.settings.history.append(Address())
+    s.commit()
+    cp = make_copy(a.settings)
+    b.settings = cp
+    s.commit()
+    cp.history[0].city = "viaCopy"
+    assert b in s.dirty
+    assert (a in s.dirty) is (not deep)  # a shallow copy shares the Address
+
+
 def test_deep_copy_assigned_to_other_row_tracks_that_row(fresh: Fresh) -> None:
     s, a, b = fresh(False)
     cp = a.settings.model_copy(deep=True)

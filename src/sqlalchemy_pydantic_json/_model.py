@@ -209,8 +209,7 @@ def _link(value: Any, parent: _Parent) -> Any:
     elif isinstance(value, list):
         # a new container has no parents yet, so filling it (which links each item to it)
         # notifies nobody
-        tracked = _TrackedList()
-        tracked.extend(cast("list[Any]", value))
+        tracked = _TrackedList(cast("list[Any]", value))
     elif isinstance(value, dict):
         tracked = _TrackedDict()
         tracked.update(cast("dict[Any, Any]", value))
@@ -244,6 +243,11 @@ class _TrackedContainer:
 # MutableList's and MutableSet's in-place operators (__iadd__, __ior__, ...) don't match list's and
 # set's; that comes from SQLAlchemy.
 class _TrackedList(_TrackedContainer, MutableList[_T]):  # ty: ignore[invalid-method-override]
+    # MutableList pickles and deep-copies itself as `cls(items)`: link the items here too.
+    def __init__(self, items: Iterable[_T] = (), /) -> None:
+        super().__init__()
+        self.extend(items)
+
     def __setitem__(self, index: SupportsIndex | slice, value: _T | Iterable[_T]) -> None:
         if isinstance(index, slice):
             value = [_link(x, self) for x in cast("Iterable[_T]", value)]

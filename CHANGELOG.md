@@ -22,6 +22,8 @@ may contain breaking changes.
 
 ### Fixed
 
+- Models inside lists weren't tracked after `copy.deepcopy()`, `model_copy(deep=True)` or
+  pickling (e.g. when caching rows): changes to them were lost. Items in dicts were fine.
 - Models with `extra="allow"`: assigning, changing or deleting an extra value now marks the row
   as changed, at any depth. Before, assigning one was lost unless something else in the row
   changed too.
