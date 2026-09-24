@@ -26,6 +26,7 @@ import functools
 import operator
 import weakref
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from collections.abc import Callable, Hashable, Iterable, Iterator
 from itertools import compress, count, repeat
 from typing import Any, Generic, Protocol, Self, SupportsIndex, TypeVar, cast, overload
@@ -356,6 +357,9 @@ def _link(
         # a new container has no parents yet, so filling it (which links each item to it)
         # notifies nobody
         tracked = _TrackedList(cast("list[Any]", value))
+    elif isinstance(value, defaultdict):
+        with_default = cast("defaultdict[Any, Any]", value)
+        tracked = _TrackedDefaultDict(with_default.default_factory, with_default)
     elif isinstance(value, dict):
         tracked = _TrackedDict()
         tracked.update(cast("dict[Any, Any]", value))
@@ -466,6 +470,25 @@ class _TrackedDict(_TrackedContainer, MutableDict[_KT, _VT]):
 
     def update(self, *a: Any, **kw: _VT) -> None:
         super().update({k: _link(v, _KeyLink, self, k) for k, v in dict(*a, **kw).items()})
+
+
+# MutableDict.pop() doesn't declare all of dict.pop()'s overloads; that comes from SQLAlchemy.
+class _TrackedDefaultDict(  # pyright: ignore[reportIncompatibleMethodOverride]
+    _TrackedDict[_KT, _VT], defaultdict[_KT, _VT]
+):
+    # defaultdict.copy() creates the copy as `cls(default_factory, items)`: link the items here too.
+    def __init__(
+        self, default_factory: Callable[[], _VT] | None = None, items: Any = (), /
+    ) -> None:
+        super().__init__(default_factory)
+        self.update(items)
+
+    def __missing__(self, key: _KT) -> _VT:
+        # defaultdict's own returns the new default as it was, not the tracked value that's stored
+        if self.default_factory is None:
+            raise KeyError(key)
+        self[key] = self.default_factory()
+        return self[key]
 
 
 class _TrackedSet(_TrackedContainer, MutableSet[_T]):  # ty: ignore[invalid-method-override]

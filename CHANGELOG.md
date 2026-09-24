@@ -24,6 +24,9 @@ may contain breaking changes.
 
 ### Fixed
 
+- `defaultdict` fields were turned into plain dicts and lost their default factory, so reading a
+  missing key raised `KeyError`. They stay `defaultdict`s now, and the default that a missing key
+  inserts is tracked.
 - Changes to lists, dicts and models inside tuples (also named tuples, and tuples inside lists
   and dicts) weren't tracked, and were lost unless something else in the row changed too.
 - Models inside lists weren't tracked after `copy.deepcopy()`, `model_copy(deep=True)` or
