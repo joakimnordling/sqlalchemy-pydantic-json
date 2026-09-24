@@ -26,10 +26,20 @@ import functools
 import operator
 import weakref
 from abc import ABC, abstractmethod
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Callable, Hashable, Iterable, Iterator
 from itertools import compress, count, repeat
-from typing import Any, Generic, Protocol, Self, SupportsIndex, TypeVar, cast, overload
+from typing import (
+    Any,
+    Generic,
+    Protocol,
+    Self,
+    SupportsIndex,
+    TypeAlias,
+    TypeVar,
+    cast,
+    overload,
+)
 
 from pydantic import AliasChoices, AliasPath, BaseModel, PrivateAttr, RootModel
 from pydantic.fields import FieldInfo
@@ -263,15 +273,15 @@ def _index_of(items: list[Any], value: object) -> int | None:
     return next(compress(count(), map(operator.is_, items, repeat(value))), None)
 
 
-class _KeyLink(_Link["_TrackedDict[Any, Any]", Hashable]):
+class _KeyLink(_Link["_TrackedMapping", Hashable]):
     """A dict holds the child, under a key."""
 
     __slots__ = ()
 
-    def _at_hint(self, parent: _TrackedDict[Any, Any]) -> object:
+    def _at_hint(self, parent: _TrackedMapping) -> object:
         return parent.get(self.hint)
 
-    def _find_and_update_hint(self, parent: _TrackedDict[Any, Any], child: object) -> bool:
+    def _find_and_update_hint(self, parent: _TrackedMapping, child: object) -> bool:
         return self._find_in(parent.items(), child)
 
 
@@ -342,7 +352,7 @@ def _link(
     if type(value) in _SCALARS:  # the most common values: nothing to track
         return value
     # the link is only created for a value that is linked
-    tracked: _TrackedList[Any] | _TrackedDict[Any, Any] | _TrackedSet[Any]
+    tracked: _Tracked
     if isinstance(value, EmbeddedPydanticModel):
         # add, not replace: the same instance may live in several places
         value._links.add(link_type(parent, hint, path))
@@ -351,8 +361,8 @@ def _link(
         items = cast("tuple[Any, ...]", value)
         linked = [_link(item, link_type, parent, hint, (*path, i)) for i, item in enumerate(items)]
         return items if all(map(operator.is_, linked, items)) else _rebuilt(items, linked)
-    if isinstance(value, _TrackedList | _TrackedDict | _TrackedSet):
-        tracked = cast("_TrackedList[Any] | _TrackedDict[Any, Any] | _TrackedSet[Any]", value)
+    if isinstance(value, _TrackedContainer):
+        tracked = cast("_Tracked", value)
     elif isinstance(value, list):
         # a new container has no parents yet, so filling it (which links each item to it)
         # notifies nobody
@@ -360,6 +370,8 @@ def _link(
     elif isinstance(value, defaultdict):
         with_default = cast("defaultdict[Any, Any]", value)
         tracked = _TrackedDefaultDict(with_default.default_factory, with_default)
+    elif isinstance(value, OrderedDict):
+        tracked = _TrackedOrderedDict(cast("OrderedDict[Any, Any]", value))
     elif isinstance(value, dict):
         tracked = _TrackedDict()
         tracked.update(cast("dict[Any, Any]", value))
@@ -493,6 +505,73 @@ class _TrackedDefaultDict(  # pyright: ignore[reportIncompatibleMethodOverride]
 
 class _TrackedSet(_TrackedContainer, MutableSet[_T]):  # ty: ignore[invalid-method-override]
     pass
+
+
+class _TrackedOrderedDict(_TrackedContainer, OrderedDict[_KT, _VT]):
+    """
+    An OrderedDict that tracks changes.
+
+    Not a MutableDict: it changes the dict with dict's own methods, which would skip the
+    OrderedDict's bookkeeping of the order. update(), setdefault(), |= and copy() go through
+    __setitem__; the other methods that change it are hooked here.
+    """
+
+    # OrderedDict.copy() creates the copy as `cls(items)`
+    def __init__(self, items: Any = (), /) -> None:
+        super().__init__()
+        self.update(items)
+
+    def __setitem__(self, key: _KT, value: _VT) -> None:
+        super().__setitem__(key, _link(value, _KeyLink, self, key))
+        self.changed()
+
+    def __delitem__(self, key: _KT) -> None:
+        super().__delitem__(key)
+        self.changed()
+
+    @overload
+    def pop(self, key: _KT) -> _VT: ...
+
+    @overload
+    def pop(self, key: _KT, default: _VT) -> _VT: ...
+
+    @overload
+    def pop(self, key: _KT, default: _T) -> _VT | _T: ...
+
+    def pop(self, key: _KT, *args: Any, **kwargs: Any) -> Any:
+        found = key in self
+        value = super().pop(key, *args, **kwargs)
+        if found:
+            self.changed()
+        return value
+
+    def popitem(self, last: bool = True) -> tuple[_KT, _VT]:
+        item = super().popitem(last)
+        self.changed()
+        return item
+
+    def clear(self) -> None:
+        super().clear()
+        self.changed()
+
+    # Pydantic stores an OrderedDict in the order of the dict underneath it, which the OrderedDict's
+    # own move_to_end() doesn't change: move the key there too, by removing and adding it.
+    def move_to_end(self, key: _KT, last: bool = True) -> None:
+        if last:
+            super().__setitem__(key, super().pop(key))
+        else:
+            first = super().pop(key)
+            rest = list(super().items())
+            super().clear()
+            super().__setitem__(key, first)
+            for k, v in rest:
+                super().__setitem__(k, v)
+        self.changed()
+
+
+# The containers holding their children under a key, and all of them
+_TrackedMapping: TypeAlias = "_TrackedDict[Any, Any] | _TrackedOrderedDict[Any, Any]"
+_Tracked: TypeAlias = "_TrackedList[Any] | _TrackedMapping | _TrackedSet[Any]"
 
 
 # --------------------------------------------------------------------------

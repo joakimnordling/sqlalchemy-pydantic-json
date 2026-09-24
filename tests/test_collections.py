@@ -1,8 +1,8 @@
-"""Other collection types: defaultdict keeps its default factory, and its values are tracked."""
+"""Other collection types (defaultdict, OrderedDict): they keep their type, and are tracked."""
 
 import copy
 import pickle
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -24,6 +24,7 @@ class Settings(EmbeddedPydanticModel):
     lists: defaultdict[str, list[int]] = defaultdict(list)
     # Pydantic infers a default factory only for built-in types (list here); a model needs its own
     items: defaultdict[str, Annotated[Item, Field(default_factory=Item)]] = defaultdict(Item)
+    ordered: OrderedDict[str, list[int]] = OrderedDict()
 
 
 class Base(DeclarativeBase):
@@ -111,6 +112,58 @@ def test_reading_should_not_mark_dirty(make_engine: MakeEngine) -> None:
         assert row not in s.dirty
 
 
+def test_ordered_dict(make_engine: MakeEngine, expire_on_commit: bool) -> None:
+    def keys(st: Settings) -> list[str]:
+        return list(st.ordered)
+
+    run_steps(
+        make_engine(Base.metadata),
+        expire_on_commit,
+        [
+            (lambda st: st.ordered.update(b=[], a=[]), lambda st: keys(st) == ["b", "a"]),
+            (lambda st: st.ordered.__setitem__("c", [1]), lambda st: st.ordered["c"] == [1]),
+            (lambda st: st.ordered["b"].append(2), lambda st: st.ordered["b"] == [2]),
+            (lambda st: st.ordered.move_to_end("b"), lambda st: keys(st) == ["a", "c", "b"]),
+            (lambda st: st.ordered.move_to_end("b", last=False), lambda st: keys(st)[0] == "b"),
+            (lambda st: st.ordered.setdefault("d", [4]), lambda st: st.ordered["d"] == [4]),
+            (lambda st: st.ordered["d"].append(5), lambda st: st.ordered["d"] == [4, 5]),
+            (lambda st: st.ordered.__ior__({"e": []}), lambda st: "e" in st.ordered),
+            (lambda st: st.ordered.pop("e"), lambda st: "e" not in st.ordered),
+            (lambda st: st.ordered.popitem(), lambda st: "d" not in st.ordered),
+            (lambda st: st.ordered.__delitem__("c"), lambda st: keys(st) == ["b", "a"]),
+            (lambda st: st.ordered.clear(), lambda st: keys(st) == []),
+        ],
+    )
+
+
+def test_ordered_dict_type_is_kept(make_engine: MakeEngine) -> None:
+    engine = make_engine(Base.metadata)
+    with Session(engine) as s:
+        s.add(Row(id=1))
+        s.commit()
+        settings = s.get_one(Row, 1).settings
+        assert isinstance(settings.ordered, OrderedDict)
+        settings.ordered = OrderedDict(a=[])
+        assert isinstance(settings.ordered, OrderedDict)
+
+
+def test_ordered_dict_should_not_mark_dirty(make_engine: MakeEngine) -> None:
+    engine = make_engine(Base.metadata)
+    with Session(engine) as s:
+        s.add(Row(id=1, settings=Settings(ordered=OrderedDict(a=[1]))))
+        s.commit()
+        row = s.get_one(Row, 1)
+        assert row.settings.ordered.pop("missing", None) is None
+        assert row.settings.ordered.setdefault("a", [2]) == [1]
+        assert row.settings.ordered.get("a") == [1]
+        assert row not in s.dirty
+        # a value removed from it is no longer its
+        popped = row.settings.ordered.pop("a")
+        s.commit()
+        popped.append(2)
+        assert row not in s.dirty
+
+
 COPIES: list[Any] = [
     pytest.param(copy.copy, id="copy.copy"),
     pytest.param(copy.deepcopy, id="copy.deepcopy"),
@@ -136,3 +189,9 @@ def test_copies(make_engine: MakeEngine, make_copy: Callable[[Settings], Setting
         s.commit()
         cp.lists["new"].append(2)
         assert b in s.dirty
+        s.commit()
+        cp.ordered["x"] = []
+        s.commit()
+        cp.ordered["x"].append(1)
+        assert b in s.dirty
+        assert isinstance(cp.ordered, OrderedDict)

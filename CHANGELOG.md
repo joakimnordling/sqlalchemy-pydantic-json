@@ -24,6 +24,9 @@ may contain breaking changes.
 
 ### Fixed
 
+- `OrderedDict` fields were turned into plain dicts, so their own methods (`move_to_end()`, ...)
+  were gone. They stay `OrderedDict`s now, and are tracked. `move_to_end()` also changes the
+  stored order, which Pydantic alone doesn't do.
 - `defaultdict` fields were turned into plain dicts and lost their default factory, so reading a
   missing key raised `KeyError`. They stay `defaultdict`s now, and the default that a missing key
   inserts is tracked.
