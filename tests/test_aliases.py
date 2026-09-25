@@ -43,6 +43,19 @@ class User(Base):
     profile: Mapped[Profile] = mapped_column(Profile.column(), default=Profile)
 
 
+class Renamed(EmbeddedPydanticModel):
+    """A field renamed from `old_name`, as the README suggests."""
+
+    new_name: str = Field(default="", validation_alias=AliasChoices("new_name", "old_name"))
+    other: int = 0
+
+
+class RenamedRow(Base):
+    __tablename__ = "alias_renamed_rows"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    data: Mapped[Renamed] = mapped_column(Renamed.column())
+
+
 def stored_json(session: Session, user_id: int = 1) -> Any:
     raw = session.execute(
         sa.text("select profile from alias_users where id = :id"), {"id": user_id}
@@ -94,6 +107,24 @@ def test_rows_stored_with_field_names_still_load(make_engine: MakeEngine) -> Non
         user.profile.display_name = "New"
         s.commit()
         assert set(stored_json(s)) == {"displayName", "TIN", "homeAddress", "pastAddresses"}
+
+
+def test_renamed_field_still_loads_its_old_name(make_engine: MakeEngine) -> None:
+    engine = make_engine(Base.metadata)
+    with Session(engine) as s:
+        s.execute(
+            sa.text("insert into alias_renamed_rows (id, data) values (1, :d)"),
+            {"d": json.dumps({"old_name": "kept", "other": 1})},
+        )
+        s.commit()
+        row = s.get_one(RenamedRow, 1)
+        assert row.data == Renamed.model_validate({"new_name": "kept", "other": 1})
+        # the next save stores the new name
+        row.data.other = 2
+        s.commit()
+        raw = s.execute(sa.text("select data from alias_renamed_rows where id = 1")).scalar()
+        stored = json.loads(raw) if isinstance(raw, str) else raw  # MariaDB returns a string
+        assert stored == {"new_name": "kept", "other": 2}
 
 
 @pytest.mark.parametrize(

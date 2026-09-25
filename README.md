@@ -395,9 +395,12 @@ response (`return user.settings`).
   lists or models in it. Assign a new deque (`settings.queue = deque(...)`) to store a change, or
   use a list: JSON has no deque, so it's stored as a list anyway.
 - **Values are validated every time a row is loaded,** against the current model. When you change
-  a model, existing rows must still validate: give new fields a default (or update the stored
-  rows), and handle renamed or removed fields, for example with a `model_validator(mode="before")`
-  or a hand-written data migration.
+  a model, existing rows must still validate:
+  - give a new field a default (or update the stored rows);
+  - to rename a field, keep loading its old name too with
+    `new_name: str = Field(validation_alias=AliasChoices("new_name", "old_name"))`: a row is stored
+    under the new name the next time it's saved;
+  - for anything else, use a `model_validator(mode="before")` or a hand-written data migration.
 - **Computed fields and excluded fields aren't stored.** A `@computed_field` is calculated again
   when the row is loaded, so you can't query it inside the JSON. A field with `Field(exclude=True)`
   isn't saved at all, and loads as its default.
