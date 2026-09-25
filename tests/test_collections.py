@@ -1,8 +1,8 @@
-"""Other collection types (defaultdict, OrderedDict): they keep their type, and are tracked."""
+"""Other collection types: defaultdict and OrderedDict are tracked; deque isn't (documented)."""
 
 import copy
 import pickle
-from collections import OrderedDict, defaultdict
+from collections import OrderedDict, defaultdict, deque
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -25,6 +25,7 @@ class Settings(EmbeddedPydanticModel):
     # Pydantic infers a default factory only for built-in types (list here); a model needs its own
     items: defaultdict[str, Annotated[Item, Field(default_factory=Item)]] = defaultdict(Item)
     ordered: OrderedDict[str, list[int]] = OrderedDict()
+    queue: deque[list[int]] = deque()
 
 
 class Base(DeclarativeBase):
@@ -162,6 +163,25 @@ def test_ordered_dict_should_not_mark_dirty(make_engine: MakeEngine) -> None:
         s.commit()
         popped.append(2)
         assert row not in s.dirty
+
+
+def test_deque_is_not_tracked_in_place(make_engine: MakeEngine) -> None:
+    """A known limit (README, rules and gotchas): only assigning a new deque is tracked."""
+    engine = make_engine(Base.metadata)
+    with Session(engine, expire_on_commit=False) as s:
+        row = Row(id=1, settings=Settings(queue=deque([[1]])))
+        s.add(row)
+        s.commit()
+        assert type(row.settings.queue) is deque
+        row.settings.queue.append([2])
+        row.settings.queue[0].append(3)
+        assert row not in s.dirty
+
+        row.settings.queue = deque([[4]])
+        assert row in s.dirty
+        s.commit()
+    with Session(engine) as s:
+        assert s.get_one(Row, 1).settings.queue == deque([[4]])
 
 
 COPIES: list[Any] = [

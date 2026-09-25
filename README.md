@@ -363,6 +363,9 @@ with SQLModelSession(engine) as session:
   whole is tracked, but changes *inside* it aren't: they're lost unless something else in the row
   changes too. So plain models are fine only if they're never changed in place, for example frozen
   ones (`model_config = ConfigDict(frozen=True)`).
+- **Changes inside a `deque` aren't tracked:** neither `append()` and the like, nor changes to the
+  lists or models in it. Assign a new deque (`settings.queue = deque(...)`) to store a change, or
+  use a list: JSON has no deque, so it's stored as a list anyway.
 - **Values are validated every time a row is loaded,** against the current model. When you change
   a model, existing rows must still validate: give new fields a default (or update the stored
   rows), and handle renamed or removed fields, for example with a `model_validator(mode="before")`
