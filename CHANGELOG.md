@@ -8,14 +8,19 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-25
+
 ### Added
 
-- Tested with SQLAlchemy 2.1, as well as 2.0.
 - `EmbeddedPydanticRootModel`: Pydantic's `RootModel` for columns whose value is a list or a
   union of models, e.g. `class Payment(EmbeddedPydanticRootModel[Card | Invoice])`. The list or
   model is its `root` attribute, and changes to it are tracked. Assigning a plain value (a list,
   one of the union's models, ...) to such a column validates it into the model.
-- Tests for generic models, discriminated unions, and validators and serializers.
+- Tested with SQLAlchemy 2.1, as well as 2.0.
+- Tested and documented: FastAPI request and response models, dataclass-style
+  (`MappedAsDataclass`) and imperative mapping, generic models, discriminated unions, validators
+  and serializers, and `merge()` of a pickled row (as with a cache).
+- README: a list of what's tracked, and what isn't.
 
 ### Changed
 
@@ -67,5 +72,6 @@ First release.
 - Works with `AsyncSession`.
 - Tested with SQLite, PostgreSQL and MariaDB, on Python 3.11 to 3.14.
 
-[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/releases/tag/v0.1.0
