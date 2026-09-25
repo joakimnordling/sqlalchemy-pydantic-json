@@ -8,7 +8,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Joakim Nordling", email = "joakim.nordling@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
-    "sqlalchemy>=2.0.22",  # 2.0.22: Session.get_one()
+    "sqlalchemy>=2.0.44",  # 2.0.44: MutableList keeps an iterable value assigned to an index
     "pydantic>=2.12",  # 2.12: model_dump(exclude_computed_fields=...)
 ]
 keywords = ["sqlalchemy", "pydantic", "json", "jsonb", "mutable", "mutation-tracking", "orm"]

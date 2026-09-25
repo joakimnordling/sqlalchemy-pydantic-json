@@ -125,9 +125,13 @@ def test_list_inside_dict_is_tracked(engine: sa.Engine, session: Session) -> Non
 
 
 def test_list_item_replaced_by_index_is_tracked(engine: sa.Engine, session: Session) -> None:
+    # a model is iterable: SQLAlchemy before 2.0.44 dropped iterable values assigned by index
     assert changes(session, lambda st: st.items.__setitem__(0, Item(name="replaced")))
+    assert reload(engine).items[0].name == "replaced"
     assert changes(session, lambda st: setattr(st.items[0], "name", "edited"))
     assert reload(engine).items[0].name == "edited"
+    assert changes(session, lambda st: st.groups["g"].__setitem__(0, Item(name="new")))
+    assert reload(engine).groups["g"][0].name == "new"
 
 
 # --- deleting a field ----------------------------------------------------------------------------

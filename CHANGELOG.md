@@ -19,6 +19,9 @@ may contain breaking changes.
 ### Changed
 
 - Requires Pydantic 2.12 or later (was 2.11).
+- Requires SQLAlchemy 2.0.44 or later (was 2.0.22). Before 2.0.44, assigning a model, tuple or
+  list to a list index (`settings.items[0] = Item()`) was silently dropped (strings too, before
+  2.0.24): SQLAlchemy's `MutableList` ignored iterable values.
 - Faster tracking in long lists: a change to an item no longer searches the whole list. Changing
   every model in a list of 10,000 went from about 1.2 s to 50 ms.
 
