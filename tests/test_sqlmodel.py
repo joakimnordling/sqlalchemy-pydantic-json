@@ -2,7 +2,11 @@
 
 from collections.abc import Callable
 
+import pytest
 import sqlalchemy as sa
+
+# in a dependency group of its own (pyproject.toml): it requires SQLAlchemy < 2.1
+pytest.importorskip("sqlmodel")
 from sqlmodel import Field, Session, SQLModel, col, select
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel

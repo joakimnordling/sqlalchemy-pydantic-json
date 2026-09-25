@@ -10,6 +10,7 @@ may contain breaking changes.
 
 ### Added
 
+- Tested with SQLAlchemy 2.1, as well as 2.0.
 - `EmbeddedPydanticRootModel`: Pydantic's `RootModel` for columns whose value is a list or a
   union of models, e.g. `class Payment(EmbeddedPydanticRootModel[Card | Invoice])`. The list or
   model is its `root` attribute, and changes to it are tracked. Assigning a plain value (a list,

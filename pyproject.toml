@@ -49,15 +49,20 @@ dev = [
     "psycopg[binary]>=3.2",
     "pymysql>=1.1",
     "pytest-cov>=6.3",  # 6.3: markdown reports (CI job summary)
-    "sqlmodel>=0.0.22",
     "fastapi>=0.133",  # 0.133: no upper bound on starlette, so lowest deps get one that uses httpx2
     "httpx2>=2",  # FastAPI's TestClient (starlette warns about plain httpx)
     "aiosqlite>=0.20",
     "greenlet>=3",
 ]
+# SQLModel requires SQLAlchemy < 2.1, so it has a group of its own, which can't be installed together
+# with the one testing SQLAlchemy 2.1: `uv sync --no-group sqlalchemy21 --group sqlmodel`.
+sqlalchemy21 = ["sqlalchemy>=2.1"]
+sqlmodel = ["sqlmodel>=0.0.22"]
 
 [tool.uv]
 required-version = ">=0.12"
+default-groups = ["dev", "sqlalchemy21"]
+conflicts = [[{ group = "sqlalchemy21" }, { group = "sqlmodel" }]]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -98,6 +103,8 @@ cache_dir = ".cache/mypy"
 # The casts are there for pyright, which narrows isinstance() on Any to list[Unknown]
 # etc.; mypy narrows to list[Any] and would call them redundant.
 warn_redundant_casts = false
+# SQLModel isn't installed by default (see [dependency-groups]); CI checks this file in its own run.
+exclude = ["^tests/test_sqlmodel\\.py$"]
 
 [tool.pyright]
 include = ["src", "tests/typing"]
