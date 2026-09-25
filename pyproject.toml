@@ -1,6 +1,6 @@
 [project]
 name = "sqlalchemy-pydantic-json"
-version = "0.1.0"
+version = "0.2.0"
 description = "Pydantic models in SQLAlchemy JSON columns, with automatic mutation tracking"
 readme = "README.md"
 license = "MIT"
@@ -8,8 +8,8 @@ license-files = ["LICENSE"]
 authors = [{ name = "Joakim Nordling", email = "joakim.nordling@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
-    "sqlalchemy>=2.0.22",  # 2.0.22: Session.get_one()
-    "pydantic>=2.11",  # 2.11: model_validate(by_alias=..., by_name=...)
+    "sqlalchemy>=2.0.44",  # 2.0.44: MutableList keeps an iterable value assigned to an index
+    "pydantic>=2.12",  # 2.12: model_dump(exclude_computed_fields=...)
 ]
 keywords = ["sqlalchemy", "pydantic", "json", "jsonb", "mutable", "mutation-tracking", "orm"]
 classifiers = [
@@ -49,13 +49,20 @@ dev = [
     "psycopg[binary]>=3.2",
     "pymysql>=1.1",
     "pytest-cov>=6.3",  # 6.3: markdown reports (CI job summary)
-    "sqlmodel>=0.0.22",
+    "fastapi>=0.133",  # 0.133: no upper bound on starlette, so lowest deps get one that uses httpx2
+    "httpx2>=2",  # FastAPI's TestClient (starlette warns about plain httpx)
     "aiosqlite>=0.20",
     "greenlet>=3",
 ]
+# SQLModel requires SQLAlchemy < 2.1, so it has a group of its own, which can't be installed together
+# with the one testing SQLAlchemy 2.1: `uv sync --no-group sqlalchemy21 --group sqlmodel`.
+sqlalchemy21 = ["sqlalchemy>=2.1"]
+sqlmodel = ["sqlmodel>=0.0.22"]
 
 [tool.uv]
 required-version = ">=0.12"
+default-groups = ["dev", "sqlalchemy21"]
+conflicts = [[{ group = "sqlalchemy21" }, { group = "sqlmodel" }]]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -96,6 +103,8 @@ cache_dir = ".cache/mypy"
 # The casts are there for pyright, which narrows isinstance() on Any to list[Unknown]
 # etc.; mypy narrows to list[Any] and would call them redundant.
 warn_redundant_casts = false
+# SQLModel isn't installed by default (see [dependency-groups]); CI checks this file in its own run.
+exclude = ["^tests/test_sqlmodel\\.py$"]
 
 [tool.pyright]
 include = ["src", "tests/typing"]

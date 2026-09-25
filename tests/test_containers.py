@@ -125,9 +125,13 @@ def test_list_inside_dict_is_tracked(engine: sa.Engine, session: Session) -> Non
 
 
 def test_list_item_replaced_by_index_is_tracked(engine: sa.Engine, session: Session) -> None:
+    # a model is iterable: SQLAlchemy before 2.0.44 dropped iterable values assigned by index
     assert changes(session, lambda st: st.items.__setitem__(0, Item(name="replaced")))
+    assert reload(engine).items[0].name == "replaced"
     assert changes(session, lambda st: setattr(st.items[0], "name", "edited"))
     assert reload(engine).items[0].name == "edited"
+    assert changes(session, lambda st: st.groups["g"].__setitem__(0, Item(name="new")))
+    assert reload(engine).groups["g"][0].name == "new"
 
 
 # --- deleting a field ----------------------------------------------------------------------------
@@ -139,6 +143,16 @@ def test_deleted_field_is_saved_and_reloads_as_its_default(
     assert changes(session, lambda st: setattr(st, "theme", "dark"))
     assert changes(session, lambda st: delattr(st, "theme"))
     assert reload(engine).theme == "light"
+
+
+def test_other_fields_stay_tracked_after_a_field_is_deleted(session: Session) -> None:
+    settings = get_user(session).settings
+    items = settings.items
+    delattr(settings, "items")
+    session.commit()
+    items.append(Item())  # no longer in the model
+    assert get_user(session) not in session.dirty
+    assert changes(session, lambda st: setattr(st.by_key["a"], "name", "edited"))
 
 
 # --- invalid assignments -------------------------------------------------------------------------

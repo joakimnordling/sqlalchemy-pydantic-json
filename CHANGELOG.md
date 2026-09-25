@@ -8,6 +8,51 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-25
+
+### Added
+
+- `EmbeddedPydanticRootModel`: Pydantic's `RootModel` for columns whose value is a list or a
+  union of models, e.g. `class Payment(EmbeddedPydanticRootModel[Card | Invoice])`. The list or
+  model is its `root` attribute, and changes to it are tracked. Assigning a plain value (a list,
+  one of the union's models, ...) to such a column validates it into the model.
+- Tested with SQLAlchemy 2.1, as well as 2.0.
+- Tested and documented: FastAPI request and response models, dataclass-style
+  (`MappedAsDataclass`) and imperative mapping, generic models, discriminated unions, validators
+  and serializers, and `merge()` of a pickled row (as with a cache).
+- README: a list of what's tracked, and what isn't.
+
+### Changed
+
+- Requires Pydantic 2.12 or later (was 2.11).
+- Requires SQLAlchemy 2.0.44 or later (was 2.0.22). Before 2.0.44, assigning a model, tuple or
+  list to a list index (`settings.items[0] = Item()`) was silently dropped (strings too, before
+  2.0.24): SQLAlchemy's `MutableList` ignored iterable values.
+- Faster tracking in long lists: a change to an item no longer searches the whole list. Changing
+  every model in a list of 10,000 went from about 1.2 s to 50 ms.
+
+### Fixed
+
+- `Counter` fields were turned into plain dicts, so their own methods (`most_common()`, ...) were
+  gone. They stay `Counter`s now, and are tracked.
+- `OrderedDict` fields were turned into plain dicts, so their own methods (`move_to_end()`, ...)
+  were gone. They stay `OrderedDict`s now, and are tracked. `move_to_end()` also changes the
+  stored order, which Pydantic alone doesn't do.
+- `defaultdict` fields were turned into plain dicts and lost their default factory, so reading a
+  missing key raised `KeyError`. They stay `defaultdict`s now, and the default that a missing key
+  inserts is tracked.
+- Changes to lists, dicts and models inside tuples (also named tuples, and tuples inside lists
+  and dicts) weren't tracked, and were lost unless something else in the row changed too.
+- Models inside lists weren't tracked after `copy.deepcopy()`, `model_copy(deep=True)` or
+  pickling (e.g. when caching rows): changes to them were lost. Items in dicts were fine.
+- Models with `extra="allow"`: assigning, changing or deleting an extra value now marks the row
+  as changed, at any depth. Before, assigning one was lost unless something else in the row
+  changed too.
+- Computed fields (`@computed_field`) are no longer stored in the JSON. A model with
+  `extra="forbid"` and a computed field, at any depth, couldn't load its own rows. Rows already
+  stored with computed values still load, unless the model forbids extra keys: resave them, or
+  remove the keys with a data migration.
+
 ## [0.1.0] - 2026-09-22
 
 First release.
@@ -27,5 +72,6 @@ First release.
 - Works with `AsyncSession`.
 - Tested with SQLite, PostgreSQL and MariaDB, on Python 3.11 to 3.14.
 
-[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/releases/tag/v0.1.0

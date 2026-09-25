@@ -5,15 +5,22 @@ Every line marked `# type: ignore` must produce an error: the checkers are confi
 unused ignore comments, so a planted error that stops being detected fails the check.
 """
 
-from typing import assert_type
+from typing import Annotated, Literal, assert_type
 
 from pydantic import ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import JSON, Integer
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute, Mapped, Session, mapped_column
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    InstrumentedAttribute,
+    Mapped,
+    MappedAsDataclass,
+    Session,
+    mapped_column,
+)
 
-from sqlalchemy_pydantic_json import EmbeddedPydanticModel, PydanticJSON
+from sqlalchemy_pydantic_json import EmbeddedPydanticModel, EmbeddedPydanticRootModel, PydanticJSON
 
 
 class Address(EmbeddedPydanticModel):
@@ -36,6 +43,23 @@ class Profile(CamelModel):
     tax_id: str | None = Field(default=None, alias="TIN")
 
 
+class Card(EmbeddedPydanticModel):
+    kind: Literal["card"] = "card"
+
+
+class Invoice(EmbeddedPydanticModel):
+    kind: Literal["invoice"] = "invoice"
+    emails: list[str] = []
+
+
+class Payment(EmbeddedPydanticRootModel[Annotated[Card | Invoice, Field(discriminator="kind")]]):
+    pass
+
+
+class Addresses(EmbeddedPydanticRootModel[list[Address]]):
+    pass
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -45,6 +69,27 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
     extra: Mapped[Settings | None] = mapped_column(Settings.column())
+    payment: Mapped[Payment] = mapped_column(Payment.column(), default=lambda: Payment(Card()))
+    addresses: Mapped[Addresses] = mapped_column(Addresses.column(), default=lambda: Addresses([]))
+
+
+class DataclassBase(MappedAsDataclass, DeclarativeBase):
+    pass
+
+
+class DataclassUser(DataclassBase):
+    __tablename__ = "dataclass_users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    settings: Mapped[Settings] = mapped_column(Settings.column(), default_factory=Settings)
+    extra: Mapped[Settings | None] = mapped_column(Settings.column(), default=None)
+
+
+def use_dataclass() -> None:
+    user = DataclassUser(id=1, settings=Settings(theme="dark"))
+    assert_type(user.settings, Settings)
+    assert_type(user.extra, Settings | None)
+    DataclassUser(id=2)  # the defaults
+    DataclassUser(id=3, extra=None)
 
 
 def use(session: Session) -> None:
@@ -67,6 +112,12 @@ def use(session: Session) -> None:
     profile = Profile(display_name="Jocke", TIN="123")
     assert_type(profile.tax_id, str | None)
     assert_type(Profile.column(), PydanticJSON[Profile])
+    # root models
+    assert_type(user.payment.root, Card | Invoice)
+    assert_type(user.addresses.root, list[Address])
+    user.addresses.root.append(Address())
+    user.payment = Payment(Invoice(emails=["a@example.com"]))
+    assert_type(Payment.column(), PydanticJSON[Payment])
 
 
 def expected_errors(user: User) -> None:
@@ -77,3 +128,8 @@ def expected_errors(user: User) -> None:
     user.settings.address = "Espoo"  # type: ignore
     print(user.extra.theme)  # type: ignore  # may be None
     Settings.column(json_type=Integer)  # type: ignore  # not a JSON type
+    user.addresses.root.append("Espoo")  # type: ignore
+    Addresses(["Espoo"])  # type: ignore
+    print(user.payment.root.emails)  # type: ignore  # may be a Card
+    DataclassUser(id=1, settings=123)  # type: ignore
+    DataclassUser(settings=Settings())  # type: ignore  # id is required

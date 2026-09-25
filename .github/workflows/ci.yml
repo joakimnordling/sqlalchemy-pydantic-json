@@ -54,9 +54,15 @@ jobs:
         run: uv run pyright
       - name: ty
         run: uv run ty check
+      # SQLModel requires SQLAlchemy < 2.1, so its tests are checked in an environment of their own,
+      # which also checks everything else against SQLAlchemy 2.0
+      - name: mypy on SQLAlchemy 2.0, with SQLModel
+        run: |
+          uv sync --locked --no-group sqlalchemy21 --group sqlmodel
+          uv run --no-sync mypy src tests tests/test_sqlmodel.py
 
   test:
-    name: test (Python ${{ matrix.python }}${{ matrix.deps != 'locked' && format(', {0} deps', matrix.deps) || '' }})
+    name: test (Python ${{ matrix.python }}${{ matrix.deps != 'locked' && format(', {0} deps', matrix.deps) || '' }}${{ matrix.deps == 'locked' && matrix.groups == 'sqlmodel' && ', SQLModel' || '' }})
     runs-on: ubuntu-latest
     # pre-release Python versions don't block
     continue-on-error: ${{ matrix.experimental || false }}
@@ -68,12 +74,18 @@ jobs:
         # dependencies (sqlalchemy, pydantic, ...). "latest": the newest allowed versions, i.e. what
         # a new user gets today; uv.lock may lag behind.
         deps: [locked]
+        # "default": SQLAlchemy 2.1. "sqlmodel": SQLModel, which requires SQLAlchemy < 2.1 (so 2.0).
+        groups: [default]
         include:
           # (an include that matched an existing combination would modify it, not add a job)
           - python: "3.11"
             deps: lowest
+            groups: sqlmodel  # the lowest SQLAlchemy, 2.0.x, and the lowest SQLModel
           - python: "3.14"
             deps: latest
+          - python: "3.14"
+            deps: locked
+            groups: sqlmodel
           - python: "3.15"
             deps: locked
             experimental: true
@@ -114,8 +126,13 @@ jobs:
           cache-suffix: test-${{ matrix.python }}-${{ matrix.deps }}
       - name: Install
         # latest: re-resolve to the newest versions (only on the runner; the repo's uv.lock is unchanged)
-        run: uv sync ${{ matrix.deps == 'locked' && '--locked' || matrix.deps == 'latest' && '--upgrade' || '' }}
+        run: uv sync ${{ matrix.deps == 'locked' && '--locked' || matrix.deps == 'latest' && '--upgrade' || '' }} ${{ matrix.groups == 'sqlmodel' && '--no-group sqlalchemy21 --group sqlmodel' || '' }}
+      # --no-sync from here on: `uv run` would otherwise install the default groups again
       - name: Versions
-        run: uv run python -c "import sys, sqlalchemy, pydantic, alembic; print(sys.version, sqlalchemy.__version__, pydantic.VERSION, alembic.__version__)"
+        run: uv run --no-sync python -c "import sys, sqlalchemy, pydantic, alembic; print(sys.version, sqlalchemy.__version__, pydantic.VERSION, alembic.__version__)"
+      - name: SQLModel
+        if: matrix.groups == 'sqlmodel'
+        # fails the job if it's missing (the SQLModel tests would only be skipped)
+        run: uv run --no-sync python -c "import sqlmodel; print(sqlmodel.__version__)"
       - name: pytest
-        run: uv run pytest --cov --cov-report=term "--cov-report=markdown-append:$GITHUB_STEP_SUMMARY"
+        run: uv run --no-sync pytest --cov --cov-report=term "--cov-report=markdown-append:$GITHUB_STEP_SUMMARY"
