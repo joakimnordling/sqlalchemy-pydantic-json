@@ -28,6 +28,8 @@ may contain breaking changes.
 
 ### Fixed
 
+- `Counter` fields were turned into plain dicts, so their own methods (`most_common()`, ...) were
+  gone. They stay `Counter`s now, and are tracked.
 - `OrderedDict` fields were turned into plain dicts, so their own methods (`move_to_end()`, ...)
   were gone. They stay `OrderedDict`s now, and are tracked. `move_to_end()` also changes the
   stored order, which Pydantic alone doesn't do.

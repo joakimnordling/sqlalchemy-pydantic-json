@@ -26,7 +26,7 @@ import functools
 import operator
 import weakref
 from abc import ABC, abstractmethod
-from collections import OrderedDict, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from collections.abc import Callable, Hashable, Iterable, Iterator
 from itertools import compress, count, repeat
 from typing import (
@@ -370,6 +370,8 @@ def _link(
     elif isinstance(value, defaultdict):
         with_default = cast("defaultdict[Any, Any]", value)
         tracked = _TrackedDefaultDict(with_default.default_factory, with_default)
+    elif isinstance(value, Counter):
+        tracked = _TrackedCounter(cast("Counter[Any]", value))
     elif isinstance(value, OrderedDict):
         tracked = _TrackedOrderedDict(cast("OrderedDict[Any, Any]", value))
     elif isinstance(value, dict):
@@ -569,9 +571,65 @@ class _TrackedOrderedDict(_TrackedContainer, OrderedDict[_KT, _VT]):
         self.changed()
 
 
+class _TrackedCounter(_TrackedContainer, Counter[_KT]):
+    """
+    A Counter that tracks changes. Its values are counts, so there's nothing to link.
+
+    Not a MutableDict: its update() would replace the counts instead of adding to them. Most of
+    Counter's methods change it with __setitem__ and __delitem__; the others are hooked here.
+    """
+
+    def __setitem__(self, key: _KT, value: int) -> None:
+        super().__setitem__(key, value)
+        self.changed()
+
+    def __delitem__(self, elem: object) -> None:
+        found = elem in self  # Counter ignores a missing key
+        super().__delitem__(elem)
+        if found:
+            self.changed()
+
+    # an empty Counter's update() skips __setitem__
+    def update(self, *args: Any, **kwargs: int) -> None:
+        super().update(*args, **kwargs)
+        self.changed()
+
+    @overload
+    def pop(self, key: object, /) -> int: ...
+
+    @overload
+    def pop(self, key: object, default: int, /) -> int: ...
+
+    @overload
+    def pop(self, key: object, default: _T, /) -> int | _T: ...
+
+    def pop(self, key: Any, /, *default: Any) -> Any:
+        found = key in self
+        value = super().pop(key, *default)
+        if found:
+            self.changed()
+        return value
+
+    def popitem(self) -> tuple[_KT, int]:
+        item = super().popitem()
+        self.changed()
+        return item
+
+    def clear(self) -> None:
+        super().clear()
+        self.changed()
+
+    def setdefault(self, key: _KT, default: Any = None, /) -> Any:  # as dict's: None by default
+        if key not in self:
+            self[key] = default
+        return self[key]
+
+
 # The containers holding their children under a key, and all of them
 _TrackedMapping: TypeAlias = "_TrackedDict[Any, Any] | _TrackedOrderedDict[Any, Any]"
-_Tracked: TypeAlias = "_TrackedList[Any] | _TrackedMapping | _TrackedSet[Any]"
+_Tracked: TypeAlias = (
+    "_TrackedList[Any] | _TrackedMapping | _TrackedSet[Any] | _TrackedCounter[Any]"
+)
 
 
 # --------------------------------------------------------------------------

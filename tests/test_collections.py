@@ -1,8 +1,8 @@
-"""Other collection types: defaultdict and OrderedDict are tracked; deque isn't (documented)."""
+"""Other collection types: defaultdict, OrderedDict and Counter are tracked; deque isn't."""
 
 import copy
 import pickle
-from collections import OrderedDict, defaultdict, deque
+from collections import Counter, OrderedDict, defaultdict, deque
 from collections.abc import Callable
 from typing import Annotated, Any
 
@@ -26,6 +26,7 @@ class Settings(EmbeddedPydanticModel):
     items: defaultdict[str, Annotated[Item, Field(default_factory=Item)]] = defaultdict(Item)
     ordered: OrderedDict[str, list[int]] = OrderedDict()
     queue: deque[list[int]] = deque()
+    tally: Counter[str] = Counter()
 
 
 class Base(DeclarativeBase):
@@ -165,6 +166,66 @@ def test_ordered_dict_should_not_mark_dirty(make_engine: MakeEngine) -> None:
         assert row not in s.dirty
 
 
+def test_counter(make_engine: MakeEngine, expire_on_commit: bool) -> None:
+    def tally(st: Settings) -> dict[str, int]:
+        return dict(st.tally)
+
+    def add_one(st: Settings) -> None:
+        st.tally["a"] += 1
+
+    run_steps(
+        make_engine(Base.metadata),
+        expire_on_commit,
+        [
+            # an empty Counter's update() skips __setitem__
+            (lambda st: st.tally.update({"a": 1}), lambda st: tally(st) == {"a": 1}),
+            (add_one, lambda st: tally(st) == {"a": 2}),
+            (lambda st: st.tally.update("bb"), lambda st: tally(st) == {"a": 2, "b": 2}),
+            (lambda st: st.tally.subtract({"b": 1}), lambda st: tally(st) == {"a": 2, "b": 1}),
+            (lambda st: st.tally.__iadd__(Counter(c=3)), lambda st: tally(st)["c"] == 3),
+            (lambda st: st.tally.__isub__(Counter(c=3)), lambda st: "c" not in tally(st)),
+            (lambda st: st.tally.__ior__(Counter(d=4)), lambda st: tally(st)["d"] == 4),
+            (
+                lambda st: st.tally.__iand__(Counter(a=1, d=1)),
+                lambda st: tally(st) == {"a": 1, "d": 1},
+            ),
+            (lambda st: st.tally.setdefault("e", 5), lambda st: tally(st)["e"] == 5),
+            (lambda st: st.tally.pop("e"), lambda st: "e" not in tally(st)),
+            (lambda st: st.tally.__delitem__("d"), lambda st: tally(st) == {"a": 1}),
+            (lambda st: st.tally.popitem(), lambda st: tally(st) == {}),
+            (lambda st: st.tally.update(x=1), lambda st: tally(st) == {"x": 1}),
+            (lambda st: st.tally.clear(), lambda st: tally(st) == {}),
+        ],
+    )
+
+
+def test_counter_type_is_kept(make_engine: MakeEngine) -> None:
+    engine = make_engine(Base.metadata)
+    with Session(engine) as s:
+        s.add(Row(id=1, settings=Settings(tally=Counter(a=2, b=1))))
+        s.commit()
+        settings = s.get_one(Row, 1).settings
+        assert isinstance(settings.tally, Counter)
+        assert settings.tally.most_common(1) == [("a", 2)]
+        settings.tally = Counter("xyy")
+        assert isinstance(settings.tally, Counter)
+        assert settings.tally.most_common(1) == [("y", 2)]
+
+
+def test_counter_should_not_mark_dirty(make_engine: MakeEngine) -> None:
+    engine = make_engine(Base.metadata)
+    with Session(engine) as s:
+        s.add(Row(id=1, settings=Settings(tally=Counter(a=1))))
+        s.commit()
+        row = s.get_one(Row, 1)
+        assert row.settings.tally["missing"] == 0  # a Counter doesn't insert a missing key
+        assert row.settings.tally.pop("missing", None) is None
+        assert row.settings.tally.setdefault("a", 5) == 1
+        del row.settings.tally["missing"]  # a Counter ignores it
+        assert row not in s.dirty
+        assert dict(row.settings.tally) == {"a": 1}
+
+
 def test_deque_is_not_tracked_in_place(make_engine: MakeEngine) -> None:
     """A known limit (README, rules and gotchas): only assigning a new deque is tracked."""
     engine = make_engine(Base.metadata)
@@ -215,3 +276,7 @@ def test_copies(make_engine: MakeEngine, make_copy: Callable[[Settings], Setting
         cp.ordered["x"].append(1)
         assert b in s.dirty
         assert isinstance(cp.ordered, OrderedDict)
+        s.commit()
+        cp.tally["x"] += 1
+        assert b in s.dirty
+        assert isinstance(cp.tally, Counter)
