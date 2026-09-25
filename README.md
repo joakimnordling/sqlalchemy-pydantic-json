@@ -114,6 +114,26 @@ with Session(engine) as session:
     session.commit()
 ```
 
+## What's tracked
+
+Any of these changes marks the row as changed, at any depth:
+
+- assigning or deleting a field (`settings.address.city = "Oulu"`, `del settings.theme`)
+- lists, dicts and sets: every method that changes them (`append()`, `items[0] = ...`, `pop()`,
+  `sort()`, `update()`, `add()`, ...)
+- lists, dicts and models inside tuples, also named tuples
+- `defaultdict`, including the default that reading a missing key inserts, and `OrderedDict`,
+  including `move_to_end()`
+- the list or model in a [root model](#lists-and-unions-as-the-column-root-models)
+- extra values of a model with `extra="allow"`
+- assigning a whole model, a dict or `None` to the column
+
+Not tracked (see [rules and gotchas](#rules-and-gotchas)):
+
+- changes inside a plain `pydantic.BaseModel` submodel: use `EmbeddedPydanticModel` for every model
+- changes inside a `deque`
+- bulk and Core statements, such as `session.execute(update(User).values(...))`
+
 ## PostgreSQL: JSON or JSONB
 
 `Model.column()` uses SQLAlchemy's generic `JSON` type, which works on every database. On
