@@ -8,6 +8,8 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-25
+
 ### Fixed
 
 - A value selected from inside the JSON, such as `select(User.settings["theme"])`, was validated
@@ -86,6 +88,7 @@ First release.
 - Works with `AsyncSession`.
 - Tested with SQLite, PostgreSQL and MariaDB, on Python 3.11 to 3.14.
 
-[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/releases/tag/v0.1.0
