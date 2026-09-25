@@ -131,6 +131,7 @@ Any of these changes marks the row as changed, at any depth:
 Not tracked (see [rules and gotchas](#rules-and-gotchas)):
 
 - changes inside a plain `pydantic.BaseModel` submodel: use `EmbeddedPydanticModel` for every model
+- changes inside a dataclass (a standard-library or a Pydantic one)
 - changes inside a `deque`
 - bulk and Core statements, such as `session.execute(update(User).values(...))`
 
@@ -388,10 +389,12 @@ response (`return user.settings`).
 ## Rules and gotchas
 
 - **Every model inside the column should inherit `EmbeddedPydanticModel`,** not
-  `pydantic.BaseModel`. A plain `BaseModel` still loads and saves correctly, and replacing it as a
-  whole is tracked, but changes *inside* it aren't: they're lost unless something else in the row
-  changes too. So plain models are fine only if they're never changed in place, for example frozen
-  ones (`model_config = ConfigDict(frozen=True)`).
+  `pydantic.BaseModel`, and not be a dataclass. A plain `BaseModel` or a dataclass still loads and
+  saves correctly, and replacing it as a whole is tracked, but changes *inside* it aren't: they're
+  lost unless something else in the row changes too. So they're fine only if they're never changed
+  in place, for example frozen ones (`model_config = ConfigDict(frozen=True)`) with nothing
+  changeable in them: a list in a frozen model can still be appended to. (In a frozen
+  `EmbeddedPydanticModel`, that's tracked.)
 - **Changes inside a `deque` aren't tracked:** neither `append()` and the like, nor changes to the
   lists or models in it. Assign a new deque (`settings.queue = deque(...)`) to store a change, or
   use a list: JSON has no deque, so it's stored as a list anyway.

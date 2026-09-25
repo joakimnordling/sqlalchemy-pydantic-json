@@ -1,6 +1,7 @@
 """Change tracking: sets, shared and moved models, copies, stale values, coercion."""
 
 import copy
+import dataclasses
 import pickle
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -8,6 +9,7 @@ from typing import Any
 import pytest
 import sqlalchemy as sa
 from pydantic import BaseModel, ConfigDict, PrivateAttr
+from pydantic.dataclasses import dataclass as pydantic_dataclass
 from sqlalchemy import Engine, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
@@ -344,10 +346,34 @@ class FrozenCountry(BaseModel):
     code: str = "FI"
 
 
+class FrozenPlainLines(BaseModel):
+    model_config = ConfigDict(frozen=True)
+    lines: list[str] = []
+
+
+class FrozenLines(EmbeddedPydanticModel):
+    model_config = ConfigDict(frozen=True)
+    lines: list[str] = []
+
+
+@dataclasses.dataclass
+class Point:
+    x: int = 0
+
+
+@pydantic_dataclass
+class PydanticPoint:
+    x: int = 0
+
+
 class MixedSettings(EmbeddedPydanticModel):
     address: PlainAddress = PlainAddress()
     history: list[PlainAddress] = []
     country: FrozenCountry = FrozenCountry()
+    frozen_plain: FrozenPlainLines = FrozenPlainLines()
+    frozen: FrozenLines = FrozenLines()
+    point: Point = Point()
+    pydantic_point: PydanticPoint = PydanticPoint()
 
 
 class MixedBase(DeclarativeBase):
@@ -390,6 +416,36 @@ def test_plain_submodels_work_apart_from_in_place_changes(make_engine: MakeEngin
             history=[PlainAddress(city="Vaasa")],
             country=FrozenCountry(code="SE"),
         )
+
+
+def test_dataclasses_and_frozen_models(make_engine: MakeEngine) -> None:
+    """Known limits (README, rules and gotchas), and what a frozen EmbeddedPydanticModel keeps."""
+    engine = make_engine(MixedBase.metadata)
+    with Session(engine, expire_on_commit=False) as s:
+        user = MixedUser(id=1)
+        s.add(user)
+        s.commit()
+
+        # a frozen model can't be assigned to, but a list in it can still change: tracked in an
+        # EmbeddedPydanticModel, not in a plain one
+        user.settings.frozen.lines.append("tracked")
+        assert user in s.dirty
+        s.commit()
+        user.settings.frozen_plain.lines.append("lost")
+        assert user not in s.dirty
+
+        # a change inside a dataclass isn't tracked; replacing it is
+        user.settings.point.x = 1
+        user.settings.pydantic_point.x = 1
+        assert user not in s.dirty
+        user.settings.point = Point(x=2)
+        assert user in s.dirty
+        s.commit()
+
+    with Session(engine) as s:
+        settings = s.get_one(MixedUser, 1).settings
+        assert settings.frozen.lines == ["tracked"]
+        assert settings.point == Point(x=2)
 
 
 # --- a model_post_init of the user's own ----------------------------------------------------------
