@@ -8,6 +8,22 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-25
+
+### Fixed
+
+- A value selected from inside the JSON, such as `select(User.settings["theme"])`, was validated
+  as the column's model. That failed, or, for an object such as `User.settings["address"]`,
+  silently returned the column's model filled with its defaults. It's now the raw JSON value (a
+  dict, list, string, ...), not validated by Pydantic, as from a JSON column. Comparing such a
+  value without an accessor (`User.settings["theme"] == "blue"`) failed the same way, and now
+  works as on a JSON column. Filtering with a typed accessor such as `.as_string()` wasn't
+  affected.
+- `JSONB` operators on the column: `has_key()` failed, and `contains({"theme": "dark"})`
+  compared against the whole model with its defaults filled in, so it missed rows whose other
+  fields weren't the defaults. A part of a document, or a key, is now passed as is. Comparing a
+  whole document with `==` or `!=` still validates a dict into the model.
+
 ## [0.2.0] - 2026-09-25
 
 ### Added
@@ -72,6 +88,7 @@ First release.
 - Works with `AsyncSession`.
 - Tested with SQLite, PostgreSQL and MariaDB, on Python 3.11 to 3.14.
 
-[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/releases/tag/v0.1.0

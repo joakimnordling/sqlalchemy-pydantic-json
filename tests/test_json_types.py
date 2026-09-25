@@ -1,5 +1,6 @@
 """The underlying JSON type (`column(json_type=...)`), NULL handling and JSON path queries."""
 
+import pickle
 from collections.abc import Callable
 from typing import Any
 
@@ -122,3 +123,77 @@ def test_query_into_json(setup: Any, where: Callable[[Any], Any], expected: list
     engine, user, _ = setup
     with Session(engine) as s:
         assert s.scalars(sa.select(user.id).where(where(user)).order_by(user.id)).all() == expected
+
+
+@pytest.mark.parametrize(
+    ("column", "expected"),
+    [
+        pytest.param(lambda u: u.settings["theme"], "dark", id="string"),
+        pytest.param(lambda u: u.settings["level"], 3, id="integer"),
+        pytest.param(lambda u: u.settings["tags"], [], id="list"),
+        pytest.param(lambda u: u.settings["address"], {"city": "Espoo"}, id="submodel"),
+        pytest.param(lambda u: u.settings[("address", "city")], "Espoo", id="path"),
+        pytest.param(lambda u: u.settings["address"]["city"], "Espoo", id="nested"),
+        pytest.param(lambda u: u.settings["address"].as_json(), {"city": "Espoo"}, id="as_json"),
+        pytest.param(lambda u: u.settings["level"].as_integer(), 3, id="as_integer"),
+    ],
+)
+def test_select_from_json(setup: Any, column: Callable[[Any], Any], expected: Any) -> None:
+    """A value inside the JSON is returned as is: it isn't the column's model."""
+    engine, user, _ = setup
+    with Session(engine) as s:
+        assert s.scalar(sa.select(column(user)).where(user.id == 1)) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(Settings(theme="dark", level=3, address=Address(city="Espoo")), id="model"),
+        pytest.param({"theme": "dark", "level": 3, "address": {"city": "Espoo"}}, id="dict"),
+    ],
+)
+def test_compare_whole_document(setup: Any, value: Any) -> None:
+    """A whole document is stored as the model would be, with defaults: a dict is validated."""
+    engine, user, _ = setup
+    if engine.dialect.name == "postgresql" and not isinstance(user.settings.type.impl, JSONB):
+        pytest.skip("PostgreSQL's json type has no = operator")
+    with Session(engine) as s:
+        assert s.scalars(sa.select(user.id).where(user.settings == value)).all() == [1]
+        assert s.scalars(sa.select(user.id).where(user.settings != value)).all() == [2]
+
+
+@pytest.mark.parametrize(
+    ("where", "expected"),
+    [
+        pytest.param(lambda u: u.settings.contains({"theme": "dark"}), [1], id="contains"),
+        pytest.param(
+            lambda u: u.settings.contains({"address": {"city": "Espoo"}}), [1], id="nested"
+        ),
+        pytest.param(lambda u: u.settings.has_key("theme"), [1, 2], id="has_key"),
+        pytest.param(lambda u: u.settings["tags"].contains([]), [1, 2], id="index_contains"),
+    ],
+)
+def test_jsonb_operators(
+    backend: str, make_engine: MakeEngine, where: Callable[[Any], Any], expected: list[int]
+) -> None:
+    """A partial document or a key isn't validated as the column's model."""
+    if backend != "postgresql":
+        pytest.skip("JSONB is PostgreSQL only")
+    metadata, user = make_models(JSONB)
+    engine = make_engine(metadata)
+    with Session(engine) as s:
+        s.add_all(
+            [user(id=1, settings={"theme": "dark", "address": {"city": "Espoo"}}), user(id=2)]
+        )
+        s.commit()
+        assert s.scalars(sa.select(user.id).where(where(user)).order_by(user.id)).all() == expected
+
+
+@pytest.mark.parametrize("json_type", [sa.JSON, JSONB])
+def test_index_type_after_pickling(json_type: Any) -> None:
+    """Indexing into a column is plain JSON also after its comparator is pickled."""
+    # Not make_models(): a column default (`default=Settings`) can't be pickled.
+    column: sa.Column[Settings] = sa.Column("settings", Settings.column(json_type))
+    sa.Table("t", sa.MetaData(), column)
+    comparator = pickle.loads(pickle.dumps(column.comparator))
+    assert type(comparator["theme"].type) is json_type
