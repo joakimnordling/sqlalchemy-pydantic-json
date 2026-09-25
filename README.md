@@ -290,6 +290,8 @@ settings: Mapped[Settings] = mapped_column(Settings.column(), server_default=tex
 Don't use a model *instance* as the default (`default=Settings()`): SQLAlchemy then puts that same
 object into every new row, so changing one row's settings changes all of them.
 
+With dataclass-style mapping (`MappedAsDataclass`), use `default_factory=Settings`.
+
 ## Alembic setup
 
 Alembic's autogenerate can't write the column type into a migration by itself: it would write

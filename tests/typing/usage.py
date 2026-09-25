@@ -11,7 +11,14 @@ from pydantic import ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from sqlalchemy import JSON, Integer
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, InstrumentedAttribute, Mapped, Session, mapped_column
+from sqlalchemy.orm import (
+    DeclarativeBase,
+    InstrumentedAttribute,
+    Mapped,
+    MappedAsDataclass,
+    Session,
+    mapped_column,
+)
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel, EmbeddedPydanticRootModel, PydanticJSON
 
@@ -66,6 +73,25 @@ class User(Base):
     addresses: Mapped[Addresses] = mapped_column(Addresses.column(), default=lambda: Addresses([]))
 
 
+class DataclassBase(MappedAsDataclass, DeclarativeBase):
+    pass
+
+
+class DataclassUser(DataclassBase):
+    __tablename__ = "dataclass_users"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    settings: Mapped[Settings] = mapped_column(Settings.column(), default_factory=Settings)
+    extra: Mapped[Settings | None] = mapped_column(Settings.column(), default=None)
+
+
+def use_dataclass() -> None:
+    user = DataclassUser(id=1, settings=Settings(theme="dark"))
+    assert_type(user.settings, Settings)
+    assert_type(user.extra, Settings | None)
+    DataclassUser(id=2)  # the defaults
+    DataclassUser(id=3, extra=None)
+
+
 def use(session: Session) -> None:
     user = session.get(User, 1)
     assert user is not None
@@ -105,3 +131,5 @@ def expected_errors(user: User) -> None:
     user.addresses.root.append("Espoo")  # type: ignore
     Addresses(["Espoo"])  # type: ignore
     print(user.payment.root.emails)  # type: ignore  # may be a Card
+    DataclassUser(id=1, settings=123)  # type: ignore
+    DataclassUser(settings=Settings())  # type: ignore  # id is required
