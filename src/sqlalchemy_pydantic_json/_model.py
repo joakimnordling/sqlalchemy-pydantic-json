@@ -43,7 +43,7 @@ from typing import (
 
 from pydantic import AliasChoices, AliasPath, BaseModel, PrivateAttr, RootModel
 from pydantic.fields import FieldInfo
-from sqlalchemy import JSON, Dialect
+from sqlalchemy import JSON, Dialect, type_coerce
 from sqlalchemy.ext.mutable import Mutable, MutableDict, MutableList, MutableSet
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.types import TypeDecorator, TypeEngine
@@ -87,6 +87,45 @@ class PydanticJSON(TypeDecorator[_M]):
 
     def process_result_value(self, value: Any, dialect: Dialect) -> _M | None:
         return None if value is None else _validate(self.model, value)
+
+    def _comparator_factory(self) -> Any:
+        base = cast("type", super().comparator_factory)
+        return type("PydanticJSONComparator", (_Comparator, base), {})
+
+    # A property, as in TypeDecorator. Written like this, mypy accepts the override (pyright not).
+    comparator_factory = property(_comparator_factory)  # pyright: ignore[reportIncompatibleMethodOverride]
+
+    def coerce_compared_value(self, op: Any, value: Any) -> TypeEngine[Any]:
+        # A model, or a whole document compared with == or !=, is stored as the model would be.
+        # Anything else is part of a document: JSONB's `contains({"theme": "dark"})`, a key...
+        if isinstance(value, self.model) or op in (operator.eq, operator.ne):
+            return self
+        return self.json_type.coerce_compared_value(op, value)
+
+
+class _Comparator(TypeDecorator.Comparator[Any]):
+    """
+    Operators of a PydanticJSON column.
+
+    A value inside the JSON isn't the column's model, so indexing into it
+    (``User.settings["theme"]``) gives a plain JSON expression, as for a JSON column.
+    """
+
+    __slots__ = ()
+
+    def __getitem__(self, index: Any) -> Any:
+        # Not self.type: after unpickling, it can be the NullType of a half-unpickled expression.
+        json_type = cast("PydanticJSON[Any]", self.expr.type).json_type
+        return type_coerce(self.expr, json_type)[index]
+
+    def __reduce__(self) -> Any:
+        # The base class's __reduce__ would rebuild a comparator without this class. The type is
+        # passed separately: when this is unpickled, the expression may not be complete yet.
+        return _comparator, (self.expr.type, self.expr)
+
+
+def _comparator(type_: PydanticJSON[Any], expr: Any) -> _Comparator:
+    return cast("_Comparator", type_.comparator_factory(expr))
 
 
 # The JSON is stored with the models' aliases (like Pydantic's own `by_alias=True`). Loading also

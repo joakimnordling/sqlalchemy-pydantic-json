@@ -166,7 +166,8 @@ server's own alias for `LONGTEXT` with a validity check, it maps to that.
 
 ## Querying inside the JSON
 
-The column keeps SQLAlchemy's JSON operators, so you can filter on values inside the model:
+The column keeps SQLAlchemy's JSON operators, so you can filter on values inside the model, and
+select them:
 
 ```python
 with Session(engine) as session:
@@ -175,7 +176,29 @@ with Session(engine) as session:
         select(User).where(User.settings[("address", "city")].as_string() == "Helsinki")
     ).all()
     assert [u.id for u in blue] == [1]
+
+    # values selected from inside the JSON are the raw JSON, not validated by Pydantic
+    theme, tags, address = session.execute(
+        select(User.settings["theme"], User.settings["tags"], User.settings["address"])
+    ).one()
+    assert theme == "blue"
+    assert tags == []  # a list, not a set
+    assert address == {"city": "Helsinki", "lines": []}  # a dict, not an Address
+    assert Address.model_validate(address) == Address()
 ```
+
+A value selected from inside the JSON is what's stored there. Pydantic doesn't validate it, so you
+don't get your model's types: a submodel comes back as a dict, a set as a list, and a `datetime`,
+`UUID`, `Decimal` or enum as the string or number it's stored as. The keys are the stored names,
+that is, the aliases if your models have any (see [aliases](#aliases-eg-camelcase)). Validate the
+value yourself if you need the model, as with `Address.model_validate()` above. Selecting only
+the part you need also skips loading and validating the whole model, which can help with large
+documents.
+
+Compare values with a typed accessor such as `.as_string()` or `.as_integer()`, as above. Comparing
+the JSON value directly (`User.settings["theme"] == "blue"`) works differently on each database,
+as with any JSON column. With `JSONB`, its own operators work too, e.g.
+`User.settings.contains({"theme": "blue"})` or `User.settings.has_key("theme")`.
 
 See SQLAlchemy's [JSON type documentation](https://docs.sqlalchemy.org/en/20/core/type_basics.html#sqlalchemy.types.JSON)
 for the operators, and what each database supports.
