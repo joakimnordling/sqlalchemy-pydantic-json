@@ -356,6 +356,12 @@ with SQLModelSession(engine) as session:
     assert session.exec(query).all() == [1]
 ```
 
+## Using with FastAPI
+
+The models work as FastAPI request and response models, like any Pydantic model. You can assign a
+request body straight to a row (`user.settings = settings`), and return a row's value as the
+response (`return user.settings`).
+
 ## Rules and gotchas
 
 - **Every model inside the column should inherit `EmbeddedPydanticModel`,** not

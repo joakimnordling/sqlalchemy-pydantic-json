@@ -50,6 +50,8 @@ dev = [
     "pymysql>=1.1",
     "pytest-cov>=6.3",  # 6.3: markdown reports (CI job summary)
     "sqlmodel>=0.0.22",
+    "fastapi>=0.133",  # 0.133: no upper bound on starlette, so lowest deps get one that uses httpx2
+    "httpx2>=2",  # FastAPI's TestClient (starlette warns about plain httpx)
     "aiosqlite>=0.20",
     "greenlet>=3",
 ]
