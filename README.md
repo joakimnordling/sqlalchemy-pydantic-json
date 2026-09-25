@@ -428,9 +428,15 @@ response (`return user.settings`).
   On its own it doesn't track anything.
 - `EmbeddedPydanticModel` combines Pydantic's `BaseModel` with SQLAlchemy's `Mutable`, and
   `Model.column()` is `Model.as_mutable(PydanticJSON(Model))`.
-- Whenever a field is set, lists, dicts and sets are wrapped in tracked versions of SQLAlchemy's
-  `MutableList`, `MutableDict` and `MutableSet`, and nested models are linked to their parent.
-  A tuple never changes, so the values inside it are linked to the tuple's parent instead.
+- Whenever a field (or an extra value, with `extra="allow"`) is set, lists, dicts and sets are
+  wrapped in tracked versions of SQLAlchemy's `MutableList`, `MutableDict` and `MutableSet`, and
+  nested models are linked to their parent. A tuple never changes, so the values inside it are
+  linked to the tuple's parent instead. A `deque` is left as it is.
+- A `defaultdict`, `OrderedDict` or `Counter` becomes a tracked subclass of its own type, so it
+  keeps its methods. The `defaultdict` one builds on the tracked dict. The other two hook their own
+  methods: `MutableDict` changes a dict with `dict`'s own methods, which would skip an
+  `OrderedDict`'s bookkeeping of the order, and its `update()` would replace a `Counter`'s counts
+  instead of adding to them.
 - Each model or container keeps weak references to all of its parents. A change is passed up from
   parent to parent until it reaches the model in the column, which marks the row as changed. A
   parent that no longer holds the value (after a `pop()` or reassignment, say) is skipped and
