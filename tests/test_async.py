@@ -3,10 +3,14 @@
 import asyncio
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel
+
+# a dev dependency (pyproject.toml), not one of the package's: importing SQLAlchemy's asyncio
+# module already fails without it.
+pytest.importorskip("greenlet")
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 ASYNC_DRIVERS = {"sqlite": "sqlite+aiosqlite", "postgresql": "postgresql+psycopg"}
 
@@ -33,8 +37,10 @@ class User(Base):
 @pytest.fixture
 def async_url(backend: str, db_url: str) -> str:
     if backend not in ASYNC_DRIVERS:
-        pytest.skip(f"no async driver installed for {backend}")
-    return ASYNC_DRIVERS[backend] + db_url[db_url.index("://") :]
+        pytest.skip(f"no async driver for {backend}")
+    driver = ASYNC_DRIVERS[backend]
+    pytest.importorskip(driver.partition("+")[2])  # the async driver, also a dev dependency
+    return driver + db_url[db_url.index("://") :]
 
 
 def test_async_session(async_url: str, expire_on_commit: bool) -> None:

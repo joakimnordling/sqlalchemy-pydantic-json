@@ -13,12 +13,15 @@ from typing import Annotated, Any, Literal
 
 import pytest
 import sqlalchemy as sa
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel, EmbeddedPydanticRootModel
+
+# a dev dependency (pyproject.toml), not one of the package's
+pytest.importorskip("fastapi")
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 MakeEngine = Callable[[sa.MetaData], sa.Engine]
 
