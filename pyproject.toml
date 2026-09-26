@@ -37,10 +37,8 @@ Issues = "https://github.com/joakimnordling/sqlalchemy-pydantic-json/issues"
 requires = ["uv_build>=0.12,<0.13"]
 build-backend = "uv_build"
 
-# The sdist carries the test suite, so that anyone building from source (a distribution's
-# packagers, a rebuilt-from-source mirror) can run it against the SQLAlchemy and Pydantic they
-# have, instead of only the versions CI pins. It doesn't go into the wheel: `tests/` is outside
-# `src/`, which is the wheel's only source.
+# The sdist carries the test suite, so a build from source can run it against the SQLAlchemy and
+# Pydantic it has. Not in the wheel: `tests/` is outside `src/`.
 [tool.uv.build-backend]
 source-include = ["tests/**", "CHANGELOG.md"]
 source-exclude = ["**/__pycache__", "**/*.pyc"]
