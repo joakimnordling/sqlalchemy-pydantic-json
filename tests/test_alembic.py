@@ -11,19 +11,22 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
 
-import alembic
 import pytest
 import sqlalchemy as sa
-from alembic import command
-from alembic.autogenerate import produce_migrations, render_python_code
-from alembic.autogenerate.api import AutogenContext
-from alembic.config import Config
-from alembic.migration import MigrationContext
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel
 from sqlalchemy_pydantic_json.alembic import make_render_item
+
+# a dev dependency (pyproject.toml), not one of the package's
+pytest.importorskip("alembic")
+import alembic
+from alembic import command
+from alembic.autogenerate import produce_migrations, render_python_code
+from alembic.autogenerate.api import AutogenContext
+from alembic.config import Config
+from alembic.migration import MigrationContext
 
 
 class Address(EmbeddedPydanticModel):

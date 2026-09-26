@@ -1,6 +1,6 @@
 [project]
 name = "sqlalchemy-pydantic-json"
-version = "0.2.1"
+version = "0.2.2"
 description = "Pydantic models in SQLAlchemy JSON columns, with automatic mutation tracking"
 readme = "README.md"
 license = "MIT"
@@ -36,6 +36,12 @@ Issues = "https://github.com/joakimnordling/sqlalchemy-pydantic-json/issues"
 [build-system]
 requires = ["uv_build>=0.12,<0.13"]
 build-backend = "uv_build"
+
+# The sdist carries the test suite, so a build from source can run it against the SQLAlchemy and
+# Pydantic it has. Not in the wheel: `tests/` is outside `src/`.
+[tool.uv.build-backend]
+source-include = ["tests/**", "CHANGELOG.md"]
+source-exclude = ["**/__pycache__", "**/*.pyc"]
 
 [dependency-groups]
 dev = [

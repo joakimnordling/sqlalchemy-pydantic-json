@@ -8,6 +8,17 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-26
+
+### Added
+
+- The source distribution (sdist) contains the test suite and `CHANGELOG.md`, so that a build
+  from source can run the tests against the SQLAlchemy and Pydantic versions it has. The wheel is
+  unchanged: the tests aren't installed.
+- The tests skip, instead of failing, when an optional development dependency is missing
+  (Alembic, FastAPI, an async driver, greenlet), so the suite runs from an unpacked sdist with
+  only pytest installed.
+
 ## [0.2.1] - 2026-09-25
 
 ### Fixed
@@ -88,7 +99,8 @@ First release.
 - Works with `AsyncSession`.
 - Tested with SQLite, PostgreSQL and MariaDB, on Python 3.11 to 3.14.
 
-[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/releases/tag/v0.1.0
