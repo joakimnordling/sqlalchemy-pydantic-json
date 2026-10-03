@@ -8,6 +8,14 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-10-03
+
+### Fixed
+
+- With SQLAlchemy 2.1.2 or later, mapping a class with a `Model.column()` column failed with
+  "metaclass conflict: the metaclass of a derived class must be a (non-strict) subclass of the
+  metaclasses of all its bases" (raised as "One or more mappers failed to initialize").
+
 ## [0.2.2] - 2026-09-26
 
 ### Added
@@ -99,7 +107,8 @@ First release.
 - Works with `AsyncSession`.
 - Tested with SQLite, PostgreSQL and MariaDB, on Python 3.11 to 3.14.
 
-[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.1.0...v0.2.0
