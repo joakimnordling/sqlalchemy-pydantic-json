@@ -89,11 +89,13 @@ class PydanticJSON(TypeDecorator[_M]):
         return None if value is None else _validate(self.model, value)
 
     def _comparator_factory(self) -> Any:
-        base = cast("type", super().comparator_factory)
-        return type("PydanticJSONComparator", (_Comparator, base), {})
+        # Built from the JSON type's comparator, not TypeDecorator's (super().comparator_factory),
+        # which isn't always a class (SQLAlchemy 2.1.2+).
+        return _comparator_class(cast("type", self.impl_instance.comparator_factory))
 
-    # A property, as in TypeDecorator. Written like this, mypy accepts the override (pyright not).
-    comparator_factory = property(_comparator_factory)  # pyright: ignore[reportIncompatibleMethodOverride]
+    # A property, as in TypeDecorator (memoized there since SQLAlchemy 2.1.2; here the class is
+    # cached by _comparator_class()). Written like this, mypy accepts the override (pyright not).
+    comparator_factory = property(_comparator_factory)  # pyright: ignore[reportAssignmentType]
 
     def coerce_compared_value(self, op: Any, value: Any) -> TypeEngine[Any]:
         # A model, or a whole document compared with == or !=, is stored as the model would be.
@@ -122,6 +124,13 @@ class _Comparator(TypeDecorator.Comparator[Any]):
         # The base class's __reduce__ would rebuild a comparator without this class. The type is
         # passed separately: when this is unpickled, the expression may not be complete yet.
         return _comparator, (self.expr.type, self.expr)
+
+
+@functools.cache
+def _comparator_class(json_comparator: type) -> type[_Comparator]:
+    """The comparator class of a PydanticJSON column whose JSON type has `json_comparator`."""
+    # _Comparator brings the TypeDecorator operators, json_comparator the JSON type's (has_key...).
+    return type("PydanticJSONComparator", (_Comparator, json_comparator), {})
 
 
 def _comparator(type_: PydanticJSON[Any], expr: Any) -> _Comparator:

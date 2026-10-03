@@ -197,3 +197,16 @@ def test_index_type_after_pickling(json_type: Any) -> None:
     sa.Table("t", sa.MetaData(), column)
     comparator = pickle.loads(pickle.dumps(column.comparator))
     assert type(comparator["theme"].type) is json_type
+
+
+@pytest.mark.parametrize("json_type", [sa.JSON, JSONB])
+def test_comparator_class(json_type: Any) -> None:
+    """A column's comparator has TypeDecorator's and the JSON type's operators, in one class."""
+    columns: list[sa.Column[Settings]] = [
+        sa.Column(name, Settings.column(json_type)) for name in ("a", "b")
+    ]
+    sa.Table("t", sa.MetaData(), *columns)
+    comparators = [column.comparator for column in columns]
+    assert isinstance(comparators[0], sa.TypeDecorator.Comparator)
+    assert isinstance(comparators[0], json_type.Comparator)
+    assert type(comparators[0]) is type(comparators[1])

@@ -8,6 +8,12 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- With SQLAlchemy 2.1.2 or later, mapping a class with a `Model.column()` column failed with
+  "metaclass conflict: the metaclass of a derived class must be a (non-strict) subclass of the
+  metaclasses of all its bases" (raised as "One or more mappers failed to initialize").
+
 ## [0.2.2] - 2026-09-26
 
 ### Added
