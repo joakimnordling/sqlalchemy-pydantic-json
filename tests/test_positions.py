@@ -7,6 +7,7 @@ duplicated values are still handled correctly.
 """
 
 import random
+from collections import deque
 from collections.abc import Callable, Iterator
 from typing import Any
 
@@ -28,6 +29,7 @@ class Settings(EmbeddedPydanticModel):
     model_config = ConfigDict(extra="allow")
     items: list[Item] = []
     labels: list[str] = []
+    queue: deque[Item] = deque()
     by_key: dict[str, Item] = {}
     first: Item = Item()
     second: Item = Item()
@@ -63,7 +65,10 @@ def session(make_engine: MakeEngine) -> Iterator[Session]:
     engine = make_engine(Base.metadata)
     with Session(engine) as s:
         items = [Item(n=i) for i in range(20)]
-        settings = Settings.model_validate({"items": items, "by_key": {"a": Item()}, "x": {"n": 0}})
+        queue = deque(Item(n=i) for i in range(20))
+        settings = Settings.model_validate(
+            {"items": items, "queue": queue, "by_key": {"a": Item()}, "x": {"n": 0}}
+        )
         s.add(Row(id=1, settings=settings))
         s.commit()
     with Session(engine, expire_on_commit=False) as s:
@@ -82,6 +87,7 @@ def test_loaded_values_need_no_search(session: Session, searches: list[object]) 
     row = session.get_one(Row, 1)  # keep it: the session holds unchanged rows weakly
     settings = row.settings
     change_all(session, row, settings.items)
+    change_all(session, row, list(settings.queue))
     settings.by_key["a"].n = 1
     settings.first.n = 1
     settings.items.append(Item())
@@ -200,3 +206,63 @@ def test_sorting_plain_values(session: Session) -> None:
     session.flush()
     row.settings.labels.sort()
     assert row in session.dirty
+
+
+def test_items_added_to_a_deque_need_no_search(session: Session, searches: list[object]) -> None:
+    row = session.get_one(Row, 1)
+    queue = row.settings.queue
+    added = [Item() for _ in range(10)]
+    queue[7] = added[0]
+    queue[-3] = added[1]
+    queue.append(added[2])
+    queue.extend(added[3:5])
+    queue.insert(-2, added[5])
+    queue.insert(5, added[6])  # shifts the items after it
+    queue.reverse()  # every item's position is updated
+    session.flush()
+    change_all(session, row, added[:7])
+    queue.extendleft(added[7:9])  # in reverse order, shifting the others
+    session.flush()
+    change_all(session, row, added[7:9])
+    queue.appendleft(added[9])
+    session.flush()
+    change_all(session, row, added[9:])
+    assert searches == []
+
+
+DEQUE_SHIFTS: dict[str, Callable[[deque[Item]], object]] = {
+    "appendleft": lambda queue: queue.appendleft(Item()),
+    "extendleft": lambda queue: queue.extendleft([Item(), Item()]),
+    "popleft": lambda queue: queue.popleft(),
+    "remove": lambda queue: queue.remove(queue[3]),
+    "delete": lambda queue: queue.__delitem__(3),
+    "rotate a little": lambda queue: queue.rotate(2),
+    "rotate a lot": lambda queue: queue.rotate(-15),
+}
+
+
+@pytest.mark.parametrize("shift", DEQUE_SHIFTS.values(), ids=DEQUE_SHIFTS.keys())
+def test_moved_deque_items_are_searched_once(
+    session: Session, searches: list[object], shift: Callable[[deque[Item]], object]
+) -> None:
+    row = session.get_one(Row, 1)
+    queue = row.settings.queue
+    shift(queue)
+    session.flush()
+    change_all(session, row, list(queue))
+    assert len(searches) <= len(queue)
+    searches.clear()
+    change_all(session, row, list(queue))  # the positions were updated
+    assert searches == []
+
+
+def test_item_dropped_from_a_full_deque(session: Session) -> None:
+    row = session.get_one(Row, 1)
+    settings = row.settings
+    settings.queue = deque(settings.queue, maxlen=20)
+    dropped = settings.queue[0]
+    settings.queue.append(Item())  # drops the first item; the others shift by one
+    session.flush()
+    change_all(session, row, list(settings.queue))
+    dropped.n = -1
+    assert row not in session.dirty

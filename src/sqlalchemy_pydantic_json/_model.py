@@ -20,13 +20,18 @@ mutations, nested models) marks `user` dirty. Use EmbeddedPydanticModel as the b
 for the column's model *and* for all of its submodels.
 """
 
+# The type-ignore comments on overrides here are for mypy only: some of the standard library's
+# containers don't match their base classes, which mypy checks overrides against (typeshed and
+# SQLAlchemy ignore it the same way). pyright has no per-line way to accept them:
+# pyright: reportUnnecessaryTypeIgnoreComment=false
+
 from __future__ import annotations
 
 import functools
 import operator
 import weakref
 from abc import ABC, abstractmethod
-from collections import Counter, OrderedDict, defaultdict
+from collections import Counter, OrderedDict, defaultdict, deque
 from collections.abc import Callable, Hashable, Iterable, Iterator
 from itertools import compress, count, repeat
 from typing import (
@@ -286,28 +291,28 @@ def _path_to(child: object, value: object) -> tuple[int, ...] | None:
 _NEAR = 8  # how far an insert or delete near an item usually moves it
 
 
-class _IndexLink(_Link["_TrackedList[Any]", int]):
-    """A list holds the child, at an index."""
+class _IndexLink(_Link["_TrackedSequence", int]):
+    """A list or deque holds the child, at an index."""
 
     __slots__ = ()
 
-    def _at_hint(self, parent: _TrackedList[Any]) -> object:
+    def _at_hint(self, parent: _TrackedSequence) -> object:
         return parent[self.hint] if self.hint < len(parent) else None
 
-    def _find_and_update_hint(self, parent: _TrackedList[Any], child: object) -> bool:
+    def _find_and_update_hint(self, parent: _TrackedSequence, child: object) -> bool:
         return (
             self._find_in(self._near_hint(parent), child)
             or self._find_directly(parent, child)
             or self._find_in(enumerate(parent), child)  # inside a tuple, or not there at all
         )
 
-    def _near_hint(self, parent: _TrackedList[Any]) -> Iterator[tuple[int, object]]:
+    def _near_hint(self, parent: _TrackedSequence) -> Iterator[tuple[int, object]]:
         """The items around the old index: an insert or delete near the child moves it a little."""
         for i in range(max(self.hint - _NEAR, 0), min(self.hint + _NEAR + 1, len(parent))):
             yield i, parent[i]
 
-    def _find_directly(self, parent: _TrackedList[Any], child: object) -> bool:
-        """Quickly find `child` itself (not inside a tuple) anywhere in the list."""
+    def _find_directly(self, parent: _TrackedSequence, child: object) -> bool:
+        """Quickly find `child` itself (not inside a tuple) anywhere in the list or deque."""
         index = _index_of(parent, child)
         if index is None:
             return False
@@ -315,7 +320,7 @@ class _IndexLink(_Link["_TrackedList[Any]", int]):
         return True
 
 
-def _index_of(items: list[Any], value: object) -> int | None:
+def _index_of(items: Iterable[Any], value: object) -> int | None:
     """The index of `value` in `items`, compared with `is` (list.index() would use ==), or None."""
     # the same as `next((i for i, item in enumerate(items) if item is value), None)`, looping in C
     return next(compress(count(), map(operator.is_, items, repeat(value))), None)
@@ -427,6 +432,9 @@ def _link(
         tracked.update(cast("dict[Any, Any]", value))
     elif isinstance(value, set):  # set items are hashable, so never models/lists/dicts
         tracked = _TrackedSet(cast("set[Any]", value))
+    elif isinstance(value, deque):
+        queue = cast("deque[Any]", value)
+        tracked = _TrackedDeque(queue, queue.maxlen)
     else:
         return value
     tracked._links.add(link_type(parent, hint, path))
@@ -440,9 +448,9 @@ def _rebuilt(original: tuple[Any, ...], items: list[Any]) -> tuple[Any, ...]:
 
 
 def _own_containers(value: Any) -> Any:
-    """For a shallow copy: `value`, with its lists, dicts and sets copied (also inside tuples)."""
-    if isinstance(value, list | dict | set):
-        return cast("list[Any] | dict[Any, Any] | set[Any]", value).copy()
+    """For a shallow copy: `value`, with its containers copied (also those inside tuples)."""
+    if isinstance(value, list | dict | set | deque):
+        return cast("list[Any] | dict[Any, Any] | set[Any] | deque[Any]", value).copy()
     if isinstance(value, tuple):
         items = cast("tuple[Any, ...]", value)
         return _rebuilt(items, [_own_containers(item) for item in items])
@@ -503,15 +511,16 @@ class _TrackedList(_TrackedContainer, MutableList[_T]):  # ty: ignore[invalid-me
     # sort() and reverse() move items without __setitem__: update every item's position
     def sort(self, **kw: Any) -> None:
         super().sort(**kw)
-        self._update_positions()
+        _update_positions(self)
 
     def reverse(self) -> None:
         super().reverse()
-        self._update_positions()
+        _update_positions(self)
 
-    def _update_positions(self) -> None:
-        for i, item in enumerate(self):
-            _link(item, _IndexLink, self, i)  # already tracked: only updates the links
+
+def _update_positions(sequence: _TrackedSequence) -> None:
+    for i, item in enumerate(sequence):
+        _link(item, _IndexLink, sequence, i)  # already tracked: only updates the links
 
 
 class _TrackedDict(_TrackedContainer, MutableDict[_KT, _VT]):
@@ -663,11 +672,95 @@ class _TrackedCounter(_TrackedContainer, Counter[_KT]):
         return self[key]
 
 
-# The containers holding their children under a key, and all of them
+class _TrackedDeque(_TrackedContainer, deque[_T]):
+    """
+    A deque that tracks changes. SQLAlchemy has no mutable deque: every method that changes it is
+    hooked here.
+
+    An item that only shifts (appendleft(), rotate(), an item dropped at maxlen, ...) keeps its
+    old position as a hint: it's found near it, or searched for once.
+    """
+
+    # deque.copy(), pickling and deep copies create the deque as `cls(items, maxlen)` or `cls()`
+    def __init__(self, items: Iterable[_T] = (), maxlen: int | None = None) -> None:
+        super().__init__((), maxlen)
+        self.extend(items)
+
+    def __setitem__(self, key: SupportsIndex, value: _T, /) -> None:  # type: ignore[override]
+        i = operator.index(key)
+        super().__setitem__(key, _link(value, _IndexLink, self, i + len(self) if i < 0 else i))
+        self.changed()
+
+    def __delitem__(self, key: SupportsIndex, /) -> None:  # type: ignore[override]
+        super().__delitem__(key)
+        self.changed()
+
+    def __iadd__(self, value: Iterable[_T], /) -> Self:
+        self.extend(value)
+        return self
+
+    def __imul__(self, value: int, /) -> Self:
+        super().__imul__(value)
+        self.changed()
+        return self
+
+    def append(self, x: _T, /) -> None:
+        super().append(_link(x, _IndexLink, self, len(self)))
+        self.changed()
+
+    def appendleft(self, x: _T, /) -> None:
+        super().appendleft(_link(x, _IndexLink, self, 0))
+        self.changed()
+
+    def extend(self, iterable: Iterable[_T], /) -> None:
+        start = len(self)
+        super().extend([_link(x, _IndexLink, self, start + i) for i, x in enumerate(iterable)])
+        self.changed()
+
+    def extendleft(self, iterable: Iterable[_T], /) -> None:
+        items = list(iterable)
+        last = len(items) - 1  # they're added one by one to the left: in reverse order
+        super().extendleft([_link(x, _IndexLink, self, last - i) for i, x in enumerate(items)])
+        self.changed()
+
+    def insert(self, i: int, x: _T, /) -> None:
+        n = len(self)
+        position = max(i + n, 0) if i < 0 else min(i, n)  # as deque.insert clamps it
+        super().insert(i, _link(x, _IndexLink, self, position))
+        self.changed()
+
+    def pop(self) -> _T:  # type: ignore[override]
+        item = super().pop()
+        self.changed()
+        return item
+
+    def popleft(self) -> _T:
+        item = super().popleft()
+        self.changed()
+        return item
+
+    def remove(self, value: _T, /) -> None:
+        super().remove(value)
+        self.changed()
+
+    def clear(self) -> None:
+        super().clear()
+        self.changed()
+
+    def rotate(self, n: int = 1, /) -> None:
+        super().rotate(n)
+        self.changed()
+
+    def reverse(self) -> None:
+        super().reverse()
+        _update_positions(self)
+        self.changed()
+
+
+# The containers holding their children at an index or under a key, and all of them
+_TrackedSequence: TypeAlias = "_TrackedList[Any] | _TrackedDeque[Any]"
 _TrackedMapping: TypeAlias = "_TrackedDict[Any, Any] | _TrackedOrderedDict[Any, Any]"
-_Tracked: TypeAlias = (
-    "_TrackedList[Any] | _TrackedMapping | _TrackedSet[Any] | _TrackedCounter[Any]"
-)
+_Tracked: TypeAlias = "_TrackedSequence | _TrackedMapping | _TrackedSet[Any] | _TrackedCounter[Any]"
 
 
 # --------------------------------------------------------------------------

@@ -8,6 +8,11 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- Changes inside a `deque` are tracked: its own methods (`append()`, `popleft()`, `rotate()`, ...)
+  and changes to the lists and models in it. Before, only assigning a new deque was.
+
 ### Changed
 
 - Requires Pydantic 2.14 or later (was 2.12).
