@@ -33,7 +33,7 @@ pip install sqlalchemy-pydantic-json
 uv add sqlalchemy-pydantic-json
 ```
 
-Requires Python 3.11+, SQLAlchemy 2.0.44+ and Pydantic 2.12+. Tested with SQLAlchemy 2.0 and 2.1,
+Requires Python 3.11+, SQLAlchemy 2.0.44+ and Pydantic 2.14+. Tested with SQLAlchemy 2.0 and 2.1,
 on SQLite, PostgreSQL and MariaDB, with both `Session` and `AsyncSession`.
 
 **Using Alembic?** Then also do the [one-time Alembic setup](#alembic-setup) below. Without it,

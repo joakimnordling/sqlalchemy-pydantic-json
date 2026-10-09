@@ -8,6 +8,10 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- Requires Pydantic 2.14 or later (was 2.12).
+
 ## [0.2.3] - 2026-10-03
 
 ### Fixed
