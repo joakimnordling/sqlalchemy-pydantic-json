@@ -12,7 +12,8 @@ may contain breaking changes.
 
 ### Added
 
-- Support for Python 3.15.
+- Support for Python 3.15. Changes inside a `frozendict` (new in 3.15) aren't tracked yet:
+  assign a new one to store a change.
 - Changes inside a `deque` are tracked: its own methods (`append()`, `popleft()`, `rotate()`, ...)
   and changes to the lists and models in it. Before, only assigning a new deque was.
 

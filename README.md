@@ -132,6 +132,7 @@ Not tracked (see [rules and gotchas](#rules-and-gotchas)):
 
 - changes inside a plain `pydantic.BaseModel` submodel: use `EmbeddedPydanticModel` for every model
 - changes inside a dataclass (a standard-library or a Pydantic one)
+- changes inside a `frozendict` (Python 3.15+)
 - bulk and Core statements, such as `session.execute(update(User).values(...))`
 
 ## PostgreSQL: JSON or JSONB
@@ -417,6 +418,10 @@ response (`return user.settings`).
   in place, for example frozen ones (`model_config = ConfigDict(frozen=True)`) with nothing
   changeable in them: a list in a frozen model can still be appended to. (In a frozen
   `EmbeddedPydanticModel`, that's tracked.)
+- **Changes inside a `frozendict` aren't tracked** (Python 3.15+). The frozendict itself can't
+  change, but the lists, dicts and models in it can, and those changes are lost unless something
+  else in the row changes too. Assign a new frozendict to store a change (`|=` does that:
+  `settings.limits |= {"a": [1]}`), or use a dict.
 - **Values are validated every time a row is loaded,** against the current model. When you change
   a model, existing rows must still validate:
   - give a new field a default (or update the stored rows);

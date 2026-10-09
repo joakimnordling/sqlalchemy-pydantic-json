@@ -2,6 +2,7 @@
 
 import copy
 import pickle
+import sys
 from collections import Counter, OrderedDict, defaultdict, deque
 from collections.abc import Callable
 from typing import Annotated, Any
@@ -347,6 +348,39 @@ def test_deque_should_not_mark_dirty(make_engine: MakeEngine) -> None:
         s.commit()
         left.append(2)
         assert row not in s.dirty
+
+
+@pytest.mark.skipif(sys.version_info < (3, 15), reason="frozendict is new in Python 3.15")
+def test_frozendict_contents_are_not_tracked(make_engine: MakeEngine) -> None:
+    """A known limit (README, rules and gotchas): only assigning a new frozendict is tracked."""
+
+    class Frozen(EmbeddedPydanticModel):
+        # ruff and mypy check for Python 3.11, which has no frozendict
+        limits: frozendict[str, list[int]] = frozendict()  # type: ignore[name-defined, unused-ignore]  # noqa: F821
+
+    class FrozenBase(DeclarativeBase):
+        pass
+
+    class FrozenRow(FrozenBase):
+        __tablename__ = "frozendict_rows"
+        id: Mapped[int] = mapped_column(primary_key=True)
+        settings: Mapped[Frozen] = mapped_column(Frozen.column(), default=Frozen)
+
+    engine = make_engine(FrozenBase.metadata)
+    with Session(engine, expire_on_commit=False) as s:
+        row = FrozenRow(id=1, settings=Frozen.model_validate({"limits": {"a": [1]}}))
+        s.add(row)
+        s.commit()
+        row.settings.limits["a"].append(2)
+        assert row not in s.dirty
+
+        row.settings.limits |= {"b": [3]}  # a new frozendict
+        assert row in s.dirty
+        s.commit()
+    with Session(engine) as s:
+        limits = s.get_one(FrozenRow, 1).settings.limits
+        assert type(limits).__name__ == "frozendict"
+        assert dict(limits) == {"a": [1, 2], "b": [3]}
 
 
 COPIES: list[Any] = [
