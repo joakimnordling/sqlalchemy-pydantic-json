@@ -7,8 +7,11 @@ One preceded by ``<!-- readme-test: needs <module> -->`` runs only when that mod
 
 import importlib.util
 import re
+import sys
 from pathlib import Path
+from types import ModuleType
 
+import pytest
 from sqlalchemy import Engine
 
 README = Path(__file__).parent.parent / "README.md"
@@ -23,13 +26,16 @@ def runs(before: str) -> bool:
     return before.strip() != SKIP and (not needs or bool(importlib.util.find_spec(needs["module"])))
 
 
-def test_readme_examples_run() -> None:
+def test_readme_examples_run(monkeypatch: pytest.MonkeyPatch) -> None:
     text = README.read_text()
     blocks = [m for m in BLOCK.finditer(text) if runs(m["before"])]
     assert len(blocks) >= 3  # the pattern still finds the examples
-    # like a module: without `__name__`, classes get the module "builtins", and Pydantic then
-    # fails to validate a discriminated union of them
-    namespace: dict[str, object] = {"__name__": "readme"}
+    # like an imported module: Pydantic looks up the classes' module in `sys.modules` when
+    # parametrizing a generic model, and without a `__name__` the classes get the module
+    # "builtins", which then fails to validate a discriminated union of them
+    module = ModuleType("readme")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    namespace = vars(module)
     try:
         for match in blocks:
             line = text.count("\n", 0, match.start("code")) + 1
