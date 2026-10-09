@@ -33,7 +33,7 @@ pip install sqlalchemy-pydantic-json
 uv add sqlalchemy-pydantic-json
 ```
 
-Requires Python 3.11+, SQLAlchemy 2.0.44+ and Pydantic 2.12+. Tested with SQLAlchemy 2.0 and 2.1,
+Requires Python 3.11+, SQLAlchemy 2.0.44+ and Pydantic 2.14+. Tested with SQLAlchemy 2.0 and 2.1,
 on SQLite, PostgreSQL and MariaDB, with both `Session` and `AsyncSession`.
 
 **Using Alembic?** Then also do the [one-time Alembic setup](#alembic-setup) below. Without it,
@@ -123,7 +123,7 @@ Any of these changes marks the row as changed, at any depth:
   `sort()`, `update()`, `add()`, ...)
 - lists, dicts and models inside tuples, also named tuples
 - `defaultdict`, including the default that reading a missing key inserts; `OrderedDict`,
-  including `move_to_end()`; and `Counter`
+  including `move_to_end()`; `Counter`; and `deque`
 - the list or model in a [root model](#lists-and-unions-as-the-column-root-models)
 - extra values of a model with `extra="allow"`
 - assigning a whole model, a dict or `None` to the column
@@ -132,7 +132,7 @@ Not tracked (see [rules and gotchas](#rules-and-gotchas)):
 
 - changes inside a plain `pydantic.BaseModel` submodel: use `EmbeddedPydanticModel` for every model
 - changes inside a dataclass (a standard-library or a Pydantic one)
-- changes inside a `deque`
+- changes inside a `frozendict` (Python 3.15+)
 - bulk and Core statements, such as `session.execute(update(User).values(...))`
 
 ## PostgreSQL: JSON or JSONB
@@ -418,9 +418,10 @@ response (`return user.settings`).
   in place, for example frozen ones (`model_config = ConfigDict(frozen=True)`) with nothing
   changeable in them: a list in a frozen model can still be appended to. (In a frozen
   `EmbeddedPydanticModel`, that's tracked.)
-- **Changes inside a `deque` aren't tracked:** neither `append()` and the like, nor changes to the
-  lists or models in it. Assign a new deque (`settings.queue = deque(...)`) to store a change, or
-  use a list: JSON has no deque, so it's stored as a list anyway.
+- **Changes inside a `frozendict` aren't tracked** (Python 3.15+). The frozendict itself can't
+  change, but the lists, dicts and models in it can, and those changes are lost unless something
+  else in the row changes too. Assign a new frozendict to store a change (`|=` does that:
+  `settings.limits |= {"a": [1]}`), or use a dict.
 - **Values are validated every time a row is loaded,** against the current model. When you change
   a model, existing rows must still validate:
   - give a new field a default (or update the stored rows);
@@ -454,18 +455,18 @@ response (`return user.settings`).
 - Whenever a field (or an extra value, with `extra="allow"`) is set, lists, dicts and sets are
   wrapped in tracked versions of SQLAlchemy's `MutableList`, `MutableDict` and `MutableSet`, and
   nested models are linked to their parent. A tuple never changes, so the values inside it are
-  linked to the tuple's parent instead. A `deque` is left as it is.
-- A `defaultdict`, `OrderedDict` or `Counter` becomes a tracked subclass of its own type, so it
-  keeps its methods. The `defaultdict` one builds on the tracked dict. The other two hook their own
-  methods: `MutableDict` changes a dict with `dict`'s own methods, which would skip an
-  `OrderedDict`'s bookkeeping of the order, and its `update()` would replace a `Counter`'s counts
-  instead of adding to them.
+  linked to the tuple's parent instead.
+- A `defaultdict`, `OrderedDict`, `Counter` or `deque` becomes a tracked subclass of its own type,
+  so it keeps its methods. The `defaultdict` one builds on the tracked dict. The others hook their
+  own methods: `MutableDict` changes a dict with `dict`'s own methods, which would skip an
+  `OrderedDict`'s bookkeeping of the order, its `update()` would replace a `Counter`'s counts
+  instead of adding to them, and SQLAlchemy has no mutable deque.
 - Each model or container keeps weak references to all of its parents. A change is passed up from
   parent to parent until it reaches the model in the column, which marks the row as changed. A
   parent that no longer holds the value (after a `pop()` or reassignment, say) is skipped and
   forgotten, so values can be moved around and shared freely.
-- Each link also remembers where the parent holds the value (a list index, dict key or field
-  name), so checking it is a single lookup, even in long lists. Only a value that has moved is
+- Each link also remembers where the parent holds the value (a list or deque index, dict key or
+  field name), so checking it is a single lookup, even in long lists. Only a value that has moved is
   searched for, once.
 
 ## Alternatives

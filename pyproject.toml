@@ -1,6 +1,6 @@
 [project]
 name = "sqlalchemy-pydantic-json"
-version = "0.2.3"
+version = "0.3.0"
 description = "Pydantic models in SQLAlchemy JSON columns, with automatic mutation tracking"
 readme = "README.md"
 license = "MIT"
@@ -9,7 +9,7 @@ authors = [{ name = "Joakim Nordling", email = "joakim.nordling@gmail.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "sqlalchemy>=2.0.44",  # 2.0.44: MutableList keeps an iterable value assigned to an index
-    "pydantic>=2.12",  # 2.12: model_dump(exclude_computed_fields=...)
+    "pydantic>=2.14",  # 2.14: dumps an OrderedDict in its own order, and serializes deque subclasses
 ]
 keywords = ["sqlalchemy", "pydantic", "json", "jsonb", "mutable", "mutation-tracking", "orm"]
 classifiers = [
@@ -23,6 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Database",
     "Typing :: Typed",
 ]
@@ -59,16 +60,11 @@ dev = [
     "httpx2>=2",  # FastAPI's TestClient (starlette warns about plain httpx)
     "aiosqlite>=0.20",
     "greenlet>=3",
+    "sqlmodel>=0.0.22",  # SQLAlchemy 2.1 needs SQLModel 0.0.48; the lowest deps test 0.0.22 on 2.0
 ]
-# SQLModel requires SQLAlchemy < 2.1, so it has a group of its own, which can't be installed together
-# with the one testing SQLAlchemy 2.1: `uv sync --no-group sqlalchemy21 --group sqlmodel`.
-sqlalchemy21 = ["sqlalchemy>=2.1"]
-sqlmodel = ["sqlmodel>=0.0.22"]
 
 [tool.uv]
 required-version = ">=0.12"
-default-groups = ["dev", "sqlalchemy21"]
-conflicts = [[{ group = "sqlalchemy21" }, { group = "sqlmodel" }]]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -109,8 +105,6 @@ cache_dir = ".cache/mypy"
 # The casts are there for pyright, which narrows isinstance() on Any to list[Unknown]
 # etc.; mypy narrows to list[Any] and would call them redundant.
 warn_redundant_casts = false
-# SQLModel isn't installed by default (see [dependency-groups]); CI checks this file in its own run.
-exclude = ["^tests/test_sqlmodel\\.py$"]
 
 [tool.pyright]
 include = ["src", "tests/typing"]

@@ -33,7 +33,7 @@ body:
         print(version('sqlalchemy-pydantic-json'), sqlalchemy.__version__, pydantic.VERSION, sys.version)"`
         and add the database and driver you use.
       placeholder: |
-        sqlalchemy-pydantic-json 0.1.0, SQLAlchemy 2.0.54, Pydantic 2.13.0, Python 3.13.7
+        sqlalchemy-pydantic-json 0.3.0, SQLAlchemy 2.1.4, Pydantic 2.14.0, Python 3.15.0
         PostgreSQL 18 with psycopg 3.3
     validations:
       required: true

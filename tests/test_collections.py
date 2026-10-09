@@ -1,14 +1,15 @@
-"""Other collection types: defaultdict, OrderedDict and Counter are tracked; deque isn't."""
+"""Other collection types: defaultdict, OrderedDict, Counter and deque."""
 
 import copy
 import pickle
+import sys
 from collections import Counter, OrderedDict, defaultdict, deque
 from collections.abc import Callable
 from typing import Annotated, Any
 
 import pytest
 import sqlalchemy as sa
-from pydantic import Field
+from pydantic import AfterValidator, Field
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel
@@ -20,6 +21,10 @@ class Item(EmbeddedPydanticModel):
     n: int = 0
 
 
+def last_three(queue: deque[int]) -> deque[int]:
+    return deque(queue, maxlen=3)
+
+
 class Settings(EmbeddedPydanticModel):
     lists: defaultdict[str, list[int]] = defaultdict(list)
     # Pydantic infers a default factory only for built-in types (list here); a model needs its own
@@ -27,6 +32,8 @@ class Settings(EmbeddedPydanticModel):
     ordered: OrderedDict[str, list[int]] = OrderedDict()
     queue: deque[list[int]] = deque()
     tally: Counter[str] = Counter()
+    # JSON has no deque, so Pydantic loads one without a maxlen; a validator can set it
+    recent: Annotated[deque[int], AfterValidator(last_three)] = deque(maxlen=3)
 
 
 class Base(DeclarativeBase):
@@ -226,23 +233,154 @@ def test_counter_should_not_mark_dirty(make_engine: MakeEngine) -> None:
         assert dict(row.settings.tally) == {"a": 1}
 
 
-def test_deque_is_not_tracked_in_place(make_engine: MakeEngine) -> None:
-    """A known limit (README, rules and gotchas): only assigning a new deque is tracked."""
+def test_deque(make_engine: MakeEngine, expire_on_commit: bool) -> None:
+    def lists(st: Settings) -> list[list[int]]:
+        return list(st.queue)
+
+    run_steps(
+        make_engine(Base.metadata),
+        expire_on_commit,
+        [
+            (lambda st: st.queue.append([1]), lambda st: lists(st) == [[1]]),
+            (lambda st: st.queue.appendleft([0]), lambda st: lists(st) == [[0], [1]]),
+            (lambda st: st.queue[1].append(2), lambda st: lists(st) == [[0], [1, 2]]),
+            (lambda st: st.queue.extend([[3]]), lambda st: lists(st) == [[0], [1, 2], [3]]),
+            (
+                lambda st: st.queue.extendleft([[-2], [-1]]),
+                lambda st: lists(st)[:3] == [[-1], [-2], [0]],
+            ),
+            (lambda st: st.queue[0].append(-3), lambda st: lists(st)[0] == [-1, -3]),
+            (lambda st: st.queue[1].append(-4), lambda st: lists(st)[1] == [-2, -4]),
+            (lambda st: st.queue[4].append(4), lambda st: lists(st)[4] == [3, 4]),
+            (lambda st: st.queue.rotate(1), lambda st: lists(st)[0] == [3, 4]),
+            (lambda st: st.queue[0].append(5), lambda st: lists(st)[0] == [3, 4, 5]),
+            (lambda st: st.queue.reverse(), lambda st: lists(st)[-1] == [3, 4, 5]),
+            (lambda st: st.queue[-1].append(6), lambda st: lists(st)[-1] == [3, 4, 5, 6]),
+            (lambda st: st.queue.insert(1, [7]), lambda st: lists(st)[1] == [7]),
+            (lambda st: st.queue[1].append(8), lambda st: lists(st)[1] == [7, 8]),
+            (lambda st: st.queue.__setitem__(0, [9]), lambda st: lists(st)[0] == [9]),
+            (lambda st: st.queue[0].append(10), lambda st: lists(st)[0] == [9, 10]),
+            (lambda st: st.queue.__delitem__(0), lambda st: lists(st)[0] == [7, 8]),
+            (lambda st: st.queue.remove([7, 8]), lambda st: [7, 8] not in lists(st)),
+            (lambda st: st.queue.pop(), lambda st: [3, 4, 5, 6] not in lists(st)),
+            (lambda st: st.queue.popleft(), lambda st: lists(st) == [[-2, -4], [-1, -3]]),
+            (lambda st: st.queue.__iadd__([[11]]), lambda st: lists(st)[-1] == [11]),
+            (lambda st: st.queue[-1].append(12), lambda st: lists(st)[-1] == [11, 12]),
+            (lambda st: st.queue.__imul__(2), lambda st: len(st.queue) == 6),
+            (lambda st: st.queue.clear(), lambda st: lists(st) == []),
+            (lambda st: setattr(st, "queue", deque([[13]])), lambda st: lists(st) == [[13]]),
+            (lambda st: st.queue[0].append(14), lambda st: lists(st) == [[13, 14]]),
+        ],
+    )
+
+
+def test_deque_type_and_maxlen_are_kept(make_engine: MakeEngine) -> None:
     engine = make_engine(Base.metadata)
     with Session(engine, expire_on_commit=False) as s:
-        row = Row(id=1, settings=Settings(queue=deque([[1]])))
+        row = Row(id=1)
         s.add(row)
         s.commit()
-        assert type(row.settings.queue) is deque
-        row.settings.queue.append([2])
-        row.settings.queue[0].append(3)
+        assert isinstance(row.settings.queue, deque)
+        row.settings.queue = deque([[1], [2]], maxlen=2)
+        assert isinstance(row.settings.queue, deque)
+        assert row.settings.queue.maxlen == 2
+        s.commit()
+        row.settings.queue.append([3])  # drops [1]
+        assert row in s.dirty
+        s.commit()
+        row.settings.queue[-1].append(4)
+        assert row in s.dirty
+        assert list(row.settings.queue) == [[2], [3, 4]]
+
+
+def test_deque_maxlen_set_by_a_validator(make_engine: MakeEngine, expire_on_commit: bool) -> None:
+    run_steps(
+        make_engine(Base.metadata),
+        expire_on_commit,
+        [
+            (lambda st: st.recent.extend([1, 2, 3]), lambda st: list(st.recent) == [1, 2, 3]),
+            (lambda st: st.recent.append(4), lambda st: list(st.recent) == [2, 3, 4]),
+            (lambda st: st.recent.appendleft(0), lambda st: list(st.recent) == [0, 2, 3]),
+            (
+                lambda st: setattr(st, "recent", deque([5, 6], maxlen=3)),
+                lambda st: list(st.recent) == [5, 6] and st.recent.maxlen == 3,
+            ),
+        ],
+    )
+
+
+def test_deque_index_must_be_an_integer(make_engine: MakeEngine) -> None:
+    engine = make_engine(Base.metadata)
+    with Session(engine) as s:
+        s.add(Row(id=1, settings=Settings(queue=deque([[1]]))))
+        s.commit()
+        row = s.get_one(Row, 1)
+        with pytest.raises(TypeError, match="slice"):
+            row.settings.queue[0:1] = [[2]]  # type: ignore[index, list-item]
+        with pytest.raises(TypeError, match="slice"):
+            del row.settings.queue[0:1]  # type: ignore[arg-type]
         assert row not in s.dirty
 
-        row.settings.queue = deque([[4]])
+
+def test_deque_should_not_mark_dirty(make_engine: MakeEngine) -> None:
+    engine = make_engine(Base.metadata)
+    with Session(engine) as s:
+        s.add(Row(id=1, settings=Settings(queue=deque([[1], [2]]))))
+        s.commit()
+        row = s.get_one(Row, 1)
+        queue = row.settings.queue
+        assert queue[0] == [1]
+        assert queue.index([2]) == 1
+        assert queue.count([1]) == 1
+        assert [2] in queue
+        queue.rotate(0)  # the same order, but a change as far as the deque knows
+        s.commit()
+        with pytest.raises(ValueError, match="not in deque"):
+            queue.remove([3])
+        with pytest.raises(IndexError):
+            queue[2] = [3]
+        with pytest.raises(IndexError):
+            del queue[2]
+        queue.copy().append([3])  # a copy isn't stored
+        assert row not in s.dirty
+        # a value removed from it is no longer its
+        left = queue.popleft()
+        s.commit()
+        left.append(2)
+        assert row not in s.dirty
+
+
+@pytest.mark.skipif(sys.version_info < (3, 15), reason="frozendict is new in Python 3.15")
+def test_frozendict_contents_are_not_tracked(make_engine: MakeEngine) -> None:
+    """A known limit (README, rules and gotchas): only assigning a new frozendict is tracked."""
+
+    class Frozen(EmbeddedPydanticModel):
+        # ruff and mypy check for Python 3.11, which has no frozendict
+        limits: frozendict[str, list[int]] = frozendict()  # type: ignore[name-defined, unused-ignore]  # noqa: F821
+
+    class FrozenBase(DeclarativeBase):
+        pass
+
+    class FrozenRow(FrozenBase):
+        __tablename__ = "frozendict_rows"
+        id: Mapped[int] = mapped_column(primary_key=True)
+        settings: Mapped[Frozen] = mapped_column(Frozen.column(), default=Frozen)
+
+    engine = make_engine(FrozenBase.metadata)
+    with Session(engine, expire_on_commit=False) as s:
+        row = FrozenRow(id=1, settings=Frozen.model_validate({"limits": {"a": [1]}}))
+        s.add(row)
+        s.commit()
+        row.settings.limits["a"].append(2)
+        assert row not in s.dirty
+
+        row.settings.limits |= {"b": [3]}  # a new frozendict
         assert row in s.dirty
         s.commit()
     with Session(engine) as s:
-        assert s.get_one(Row, 1).settings.queue == deque([[4]])
+        limits = s.get_one(FrozenRow, 1).settings.limits
+        assert type(limits).__name__ == "frozendict"
+        assert dict(limits) == {"a": [1, 2], "b": [3]}
 
 
 COPIES: list[Any] = [
@@ -280,3 +418,9 @@ def test_copies(make_engine: MakeEngine, make_copy: Callable[[Settings], Setting
         cp.tally["x"] += 1
         assert b in s.dirty
         assert isinstance(cp.tally, Counter)
+        s.commit()
+        cp.queue.append([])
+        s.commit()
+        cp.queue[0].append(1)
+        assert b in s.dirty
+        assert isinstance(cp.queue, deque)

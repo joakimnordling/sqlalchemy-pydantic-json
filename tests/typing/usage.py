@@ -22,6 +22,9 @@ from sqlalchemy.orm import (
 
 from sqlalchemy_pydantic_json import EmbeddedPydanticModel, EmbeddedPydanticRootModel, PydanticJSON
 
+# True in the run with Pydantic's mypy plugin (`always_true` in mypy-pydantic-plugin.ini)
+PYDANTIC_MYPY_PLUGIN = False
+
 
 class Address(EmbeddedPydanticModel):
     city: str = "Helsinki"
@@ -129,7 +132,8 @@ def expected_errors(user: User) -> None:
     print(user.extra.theme)  # type: ignore  # may be None
     Settings.column(json_type=Integer)  # type: ignore  # not a JSON type
     user.addresses.root.append("Espoo")  # type: ignore
-    Addresses(["Espoo"])  # type: ignore
+    if not PYDANTIC_MYPY_PLUGIN:  # without `init_typed`, the plugin accepts any root value
+        Addresses(["Espoo"])  # type: ignore
     print(user.payment.root.emails)  # type: ignore  # may be a Card
     DataclassUser(id=1, settings=123)  # type: ignore
     DataclassUser(settings=Settings())  # type: ignore  # id is required

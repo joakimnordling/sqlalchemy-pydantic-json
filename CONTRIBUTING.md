@@ -37,22 +37,13 @@ uv run pytest
 Every test that uses a database runs once per configured backend. `docker compose down` stops the
 databases.
 
-`uv sync` installs SQLAlchemy 2.1, without SQLModel: SQLModel requires SQLAlchemy < 2.1, so it's
-in a dependency group of its own, and its tests are skipped. To run them, on SQLAlchemy 2.0:
-
-```bash
-uv sync --no-group sqlalchemy21 --group sqlmodel
-uv run --no-sync pytest     # --no-sync: `uv run` would install the default groups again
-uv sync                     # back to SQLAlchemy 2.1
-```
-
 CI also runs the tests on every supported Python version, and with the lowest and the newest
-allowed versions of the dependencies. To try the lowest versions locally (SQLAlchemy 2.0, with
-SQLModel):
+allowed versions of the dependencies. `uv sync` installs SQLAlchemy 2.1; to try the lowest versions
+locally (SQLAlchemy 2.0):
 
 ```bash
-UV_RESOLUTION=lowest-direct uv sync --no-group sqlalchemy21 --group sqlmodel
-uv run --no-sync pytest
+UV_RESOLUTION=lowest-direct uv sync
+uv run --no-sync pytest     # --no-sync: `uv run` would install the locked versions again
 ```
 
 (This rewrites `uv.lock`; run `git checkout uv.lock && uv sync` afterwards.)
@@ -69,9 +60,7 @@ uv run ty check
 uv run mypy --config-file tests/typing/mypy-pydantic-plugin.ini  # as seen with Pydantic's plugin
 ```
 
-mypy leaves out `tests/test_sqlmodel.py`, as SQLModel isn't installed by default. CI checks it, and
-everything else against SQLAlchemy 2.0, with SQLModel installed as above:
-`uv run --no-sync mypy src tests tests/test_sqlmodel.py`.
+CI also runs mypy against SQLAlchemy 2.0's types: `uv run --with "sqlalchemy<2.1" mypy`.
 
 `tests/typing/` contains code as a user of the package would write it. It's type-checked, never
 run. Lines that must be reported as errors are marked `# type: ignore`, and the checkers are set up
@@ -105,9 +94,9 @@ git switch main && git pull
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-The workflow checks that the tag matches the version in `pyproject.toml`, builds and checks the
-package, publishes it to PyPI and creates a GitHub release with that version's changelog section
-and a link to the full changelog.
+The workflow checks that the tagged commit is on `main` and that the tag matches the version in
+`pyproject.toml`, builds and checks the package, publishes it to PyPI and creates a GitHub release
+with that version's changelog section and a link to the full changelog.
 Versions with `a`, `b` or `rc` in them are marked as pre-releases. Installers skip those in favour
 of stable versions, but note that they do install a pre-release when the project has no stable
 release at all.
