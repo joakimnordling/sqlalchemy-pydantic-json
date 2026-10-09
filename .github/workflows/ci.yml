@@ -61,12 +61,10 @@ jobs:
   test:
     name: test (Python ${{ matrix.python }}${{ matrix.deps != 'locked' && format(', {0} deps', matrix.deps) || '' }})
     runs-on: ubuntu-latest
-    # pre-release Python versions don't block
-    continue-on-error: ${{ matrix.experimental || false }}
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14", "3.15"]
         # "locked": the versions in uv.lock. "lowest": the lowest allowed versions of the
         # dependencies (sqlalchemy, pydantic, ...). "latest": the newest allowed versions, i.e. what
         # a new user gets today; uv.lock may lag behind.
@@ -75,11 +73,8 @@ jobs:
           # (an include that matched an existing combination would modify it, not add a job)
           - python: "3.11"
             deps: lowest  # SQLAlchemy 2.0 (the lock and latest have 2.1)
-          - python: "3.14"
-            deps: latest
           - python: "3.15"
-            deps: locked
-            experimental: true
+            deps: latest
     services:
       postgres:
         image: postgres:18
