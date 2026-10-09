@@ -604,18 +604,8 @@ class _TrackedOrderedDict(_TrackedContainer, OrderedDict[_KT, _VT]):
         super().clear()
         self.changed()
 
-    # Pydantic stores an OrderedDict in the order of the dict underneath it, which the OrderedDict's
-    # own move_to_end() doesn't change: move the key there too, by removing and adding it.
     def move_to_end(self, key: _KT, last: bool = True) -> None:
-        if last:
-            super().__setitem__(key, super().pop(key))
-        else:
-            first = super().pop(key)
-            rest = list(super().items())
-            super().clear()
-            super().__setitem__(key, first)
-            for k, v in rest:
-                super().__setitem__(k, v)
+        super().move_to_end(key, last)
         self.changed()
 
 
