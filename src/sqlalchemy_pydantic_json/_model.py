@@ -542,6 +542,11 @@ class _TrackedDict(_TrackedContainer, MutableDict[_KT, _VT]):
     def update(self, *a: Any, **kw: _VT) -> None:
         super().update({k: _link(v, _KeyLink, self, k) for k, v in dict(*a, **kw).items()})
 
+    # dict's own |= skips update() (MutableDict only has one of its own from SQLAlchemy 2.1.4)
+    def __ior__(self, other: Any) -> Self:  # type: ignore[override, misc]
+        self.update(other)
+        return self
+
 
 # MutableDict.pop() doesn't declare all of dict.pop()'s overloads; that comes from SQLAlchemy.
 class _TrackedDefaultDict(  # pyright: ignore[reportIncompatibleMethodOverride]

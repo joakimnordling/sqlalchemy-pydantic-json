@@ -90,6 +90,7 @@ def test_model_in_dict_is_tracked(engine: sa.Engine, session: Session) -> None:
         pytest.param(lambda d, item: d.__setitem__("b", item), "b", id="setitem"),
         pytest.param(lambda d, item: d.setdefault("b", item), "b", id="setdefault"),
         pytest.param(lambda d, item: d.update({"b": item}), "b", id="update"),
+        pytest.param(lambda d, item: d.__ior__({"b": item}), "b", id="ior"),
         pytest.param(lambda d, item: d.__setitem__("a", item), "a", id="replace"),
     ],
 )

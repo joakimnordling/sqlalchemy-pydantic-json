@@ -17,6 +17,11 @@ may contain breaking changes.
 
 - Requires Pydantic 2.14 or later (was 2.12).
 
+### Fixed
+
+- With SQLAlchemy before 2.1.4, `|=` on a dict wasn't tracked: on a dict inside a list or dict
+  the change was lost, and the values it added to a field's dict weren't tracked themselves.
+
 ## [0.2.3] - 2026-10-03
 
 ### Fixed
