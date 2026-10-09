@@ -94,9 +94,9 @@ git switch main && git pull
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-The workflow checks that the tag matches the version in `pyproject.toml`, builds and checks the
-package, publishes it to PyPI and creates a GitHub release with that version's changelog section
-and a link to the full changelog.
+The workflow checks that the tagged commit is on `main` and that the tag matches the version in
+`pyproject.toml`, builds and checks the package, publishes it to PyPI and creates a GitHub release
+with that version's changelog section and a link to the full changelog.
 Versions with `a`, `b` or `rc` in them are marked as pre-releases. Installers skip those in favour
 of stable versions, but note that they do install a pre-release when the project has no stable
 release at all.

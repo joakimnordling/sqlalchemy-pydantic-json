@@ -58,6 +58,31 @@ jobs:
       - name: mypy on SQLAlchemy 2.0
         run: uv run --locked --with "sqlalchemy<2.1" mypy
 
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          cache-suffix: package
+      - run: uv build
+      - name: Check the package
+        run: uvx twine==7.0.0 check --strict dist/*  # the same version as in release.yml
+      # The sdist's tests, run against the installed wheel: a file missing from either fails them.
+      - name: Test the built package
+        run: |
+          uv venv "$RUNNER_TEMP/venv"
+          # --color never: FORCE_COLOR would put escape codes in the file
+          uv export --color never --frozen --only-group dev --no-hashes \
+            > "$RUNNER_TEMP/dev-requirements.txt"
+          uv pip install --python "$RUNNER_TEMP/venv" dist/*.whl -r "$RUNNER_TEMP/dev-requirements.txt"
+          mkdir "$RUNNER_TEMP/sdist"
+          tar xzf dist/*.tar.gz -C "$RUNNER_TEMP/sdist" --strip-components=1
+          cd "$RUNNER_TEMP/sdist"
+          "$RUNNER_TEMP/venv/bin/python" -m pytest
+
   test:
     name: test (Python ${{ matrix.python }}${{ matrix.deps != 'locked' && format(', {0} deps', matrix.deps) || '' }})
     runs-on: ubuntu-latest
