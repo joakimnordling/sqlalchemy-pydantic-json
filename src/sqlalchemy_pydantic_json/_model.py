@@ -99,8 +99,9 @@ class PydanticJSON(TypeDecorator[_M]):
         return _comparator_class(cast("type", self.impl_instance.comparator_factory))
 
     # A property, as in TypeDecorator (memoized there since SQLAlchemy 2.1.2; here the class is
-    # cached by _comparator_class()). Written like this, mypy accepts the override (pyright not).
-    comparator_factory = property(_comparator_factory)  # pyright: ignore[reportAssignmentType]
+    # cached by _comparator_class()). Written like this, mypy accepts the override (pyright and ty
+    # not: TypeEngine declares a plain, writable attribute).
+    comparator_factory = property(_comparator_factory)  # pyright: ignore[reportAssignmentType]  # ty: ignore[invalid-property-type-override]
 
     def coerce_compared_value(self, op: Any, value: Any) -> TypeEngine[Any]:
         # A model, or a whole document compared with == or !=, is stored as the model would be.

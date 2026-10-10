@@ -12,21 +12,21 @@ repos:
       - id: check-added-large-files
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.8
+    rev: v0.17.0
     hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
 
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.12.18
+    rev: 0.13.0
     hooks:
       - id: uv-lock
 
   # Runs `uv check`, so ty sees the project's dependencies. The rev is the ty version;
   # keep it in sync with the ty pin in pyproject.toml.
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: v0.0.83
+    rev: v0.0.86
     hooks:
       - id: ty
 
