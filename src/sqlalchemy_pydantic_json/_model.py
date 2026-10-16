@@ -91,7 +91,9 @@ class PydanticJSON(TypeDecorator[_M]):
         )
 
     def process_result_value(self, value: Any, dialect: Dialect) -> _M | None:
-        return None if value is None else _validate(self.model, value)
+        # Not strict: a datetime, UUID, set... is stored as a string or a list, which strict mode
+        # only accepts from JSON text (as in model_validate_json()).
+        return None if value is None else _validate(self.model, value, strict=False)
 
     def _comparator_factory(self) -> Any:
         # Built from the JSON type's comparator, not TypeDecorator's (super().comparator_factory),
@@ -145,8 +147,8 @@ def _comparator(type_: PydanticJSON[Any], expr: Any) -> _Comparator:
 
 # The JSON is stored with the models' aliases (like Pydantic's own `by_alias=True`). Loading also
 # accepts field names, e.g. in rows stored before an alias was added.
-def _validate(model: type[_M], value: Any) -> _M:
-    return model.model_validate(value, by_alias=True, by_name=True)
+def _validate(model: type[_M], value: Any, *, strict: bool | None = None) -> _M:
+    return model.model_validate(value, strict=strict, by_alias=True, by_name=True)
 
 
 # Marks a model_post_init that sets up the tracking. Pydantic wraps model_post_init in every

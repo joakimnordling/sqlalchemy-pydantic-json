@@ -5,12 +5,12 @@ from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from enum import Enum, IntEnum, StrEnum
 from ipaddress import IPv4Address
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
 import pytest
 import sqlalchemy as sa
-from pydantic import ConfigDict, HttpUrl
+from pydantic import ConfigDict, HttpUrl, Strict, ValidationError
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
@@ -310,3 +310,63 @@ def test_bytes_that_are_not_utf8(make_engine: MakeEngine) -> None:
         s.add(Row(id=1, values=Values(raw=b"\xff")))
         with pytest.raises(sa.exc.StatementError, match="utf-8"):
             s.flush()
+
+
+class StrictEvent(EmbeddedPydanticModel):
+    model_config = ConfigDict(strict=True)
+
+    at: datetime = datetime(2026, 1, 2, tzinfo=UTC)
+
+
+class StrictValues(EmbeddedPydanticModel):
+    model_config = ConfigDict(strict=True)
+
+    at: datetime = datetime(2026, 1, 2, tzinfo=UTC)
+    uid: UUID = UUID(int=1)
+    amount: Decimal = Decimal("0.10")
+    color: Color = Color.RED
+    ids: set[UUID] = {UUID(int=1)}
+    pair: tuple[int, date] = (1, date(2026, 1, 2))
+    by_day: dict[date, int] = {date(2026, 1, 2): 1}
+    event: StrictEvent = StrictEvent()
+
+
+class PartlyStrict(EmbeddedPydanticModel):
+    at: Annotated[datetime, Strict()] = datetime(2026, 1, 2, tzinfo=UTC)
+    event: StrictEvent = StrictEvent()
+
+
+class StrictRow(Base):
+    __tablename__ = "field_types_strict"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    strict: Mapped[StrictValues] = mapped_column(StrictValues.column(), default=StrictValues)
+    partly: Mapped[PartlyStrict] = mapped_column(PartlyStrict.column(), default=PartlyStrict)
+
+
+def test_strict_models_load(make_engine: MakeEngine, expire_on_commit: bool) -> None:
+    """Strict models load the strings and lists they're stored as (as from JSON text)."""
+    engine = make_engine(Base.metadata)
+    with Session(engine, expire_on_commit=expire_on_commit) as s:
+        s.add(StrictRow(id=1))
+        s.commit()
+        row = s.get_one(StrictRow, 1)
+        assert row.strict == StrictValues()
+        assert row.partly == PartlyStrict()
+        row.strict.ids.add(UUID(int=2))
+        row.partly.event.at = datetime(2027, 1, 1, tzinfo=UTC)
+        s.commit()
+    with Session(engine) as s:
+        row = s.get_one(StrictRow, 1)
+        assert row.strict.ids == {UUID(int=1), UUID(int=2)}
+        assert row.partly.event.at == datetime(2027, 1, 1, tzinfo=UTC)
+
+
+def test_strict_models_validate_assigned_dicts_strictly(make_engine: MakeEngine) -> None:
+    engine = make_engine(Base.metadata)
+    with Session(engine) as s:
+        s.add(StrictRow(id=1))
+        s.commit()
+        row = s.get_one(StrictRow, 1)
+        with pytest.raises(ValidationError, match="valid datetime"):
+            row.strict = {"at": "2027-01-01T00:00:00Z"}  # type: ignore[assignment]
+        assert row not in s.dirty

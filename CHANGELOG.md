@@ -8,6 +8,15 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- Strict models (`ConfigDict(strict=True)`, or fields marked `Strict()`) couldn't load their rows
+  if they contained a `datetime`, `date`, `time`, `timedelta`, `UUID`, `Decimal`, enum, `bytes`,
+  set or tuple: loading failed with a `ValidationError` such as "Input should be a valid
+  datetime". These are stored as JSON strings, numbers and lists, which strict mode only accepts
+  from JSON text. A row is now loaded from the database as if the model weren't strict; a model or
+  dict you assign is still validated strictly.
+
 ## [0.3.0] - 2026-10-09
 
 ### Added
