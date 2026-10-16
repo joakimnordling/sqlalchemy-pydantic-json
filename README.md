@@ -429,6 +429,13 @@ response (`return user.settings`).
     `new_name: str = Field(validation_alias=AliasChoices("new_name", "old_name"))`: a row is stored
     under the new name the next time it's saved;
   - for anything else, use a `model_validator(mode="before")` or a hand-written data migration.
+- **Loading from the database isn't strict.** A `datetime`, `UUID`, `Decimal`, enum, set or tuple
+  is stored as a string, number or list, which a model with `strict=True` (or a `Strict()` field)
+  only accepts from JSON text. So a row is loaded as if the model weren't strict. A model or dict
+  you assign is validated strictly.
+- **Bytes are stored as UTF-8 text** (Pydantic's default for JSON), so a `bytes` field that isn't
+  valid UTF-8 can't be saved. Store it as base64 instead:
+  `model_config = ConfigDict(ser_json_bytes="base64", val_json_bytes="base64")`.
 - **Computed fields and excluded fields aren't stored.** A `@computed_field` is calculated again
   when the row is loaded, so you can't query it inside the JSON. A field with `Field(exclude=True)`
   isn't saved at all, and loads as its default.

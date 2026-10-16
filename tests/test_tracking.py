@@ -36,6 +36,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
     extra: Mapped[Settings | None] = mapped_column(Settings.column())
@@ -343,16 +344,19 @@ class PlainAddress(BaseModel):
 
 class FrozenCountry(BaseModel):
     model_config = ConfigDict(frozen=True)
+
     code: str = "FI"
 
 
 class FrozenPlainLines(BaseModel):
     model_config = ConfigDict(frozen=True)
+
     lines: list[str] = []
 
 
 class FrozenLines(EmbeddedPydanticModel):
     model_config = ConfigDict(frozen=True)
+
     lines: list[str] = []
 
 
@@ -382,6 +386,7 @@ class MixedBase(DeclarativeBase):
 
 class MixedUser(MixedBase):
     __tablename__ = "mixed_users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[MixedSettings] = mapped_column(MixedSettings.column(), default=MixedSettings)
 
@@ -478,6 +483,7 @@ class PostInitBase(DeclarativeBase):
 
 class PostInitUser(PostInitBase):
     __tablename__ = "post_init_users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     without_super: Mapped[PostInitWithoutSuper] = mapped_column(
         PostInitWithoutSuper.column(), default=PostInitWithoutSuper

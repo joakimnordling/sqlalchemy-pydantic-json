@@ -44,6 +44,7 @@ class Base(DeclarativeBase):
 
 class Row(Base):
     __tablename__ = "computed_rows"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     data: Mapped[Order] = mapped_column(Order.column(), default=Order)
 
@@ -59,6 +60,7 @@ class Lenient(EmbeddedPydanticModel):
 
 class LenientRow(Base):
     __tablename__ = "computed_lenient_rows"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     data: Mapped[Lenient] = mapped_column(Lenient.column())
 

@@ -18,11 +18,13 @@ class Address(EmbeddedPydanticModel):
 
 class Country(EmbeddedPydanticModel):
     model_config = ConfigDict(frozen=True)
+
     code: str = "FI"
 
 
 class Settings(EmbeddedPydanticModel):
     model_config = ConfigDict(validate_assignment=True)
+
     level: int = 1
     address: Address | None = None
     country: Country = Country()
@@ -35,6 +37,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "feature_users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
 

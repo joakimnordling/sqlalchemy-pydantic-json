@@ -8,6 +8,17 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-16
+
+### Fixed
+
+- Strict models (`ConfigDict(strict=True)`, or fields marked `Strict()`) couldn't load their rows
+  if they contained a `datetime`, `date`, `time`, `timedelta`, `UUID`, `Decimal`, enum, `bytes`,
+  set or tuple: loading failed with a `ValidationError` such as "Input should be a valid
+  datetime". These are stored as JSON strings, numbers and lists, which strict mode only accepts
+  from JSON text. A row is now loaded from the database as if the model weren't strict; a model or
+  dict you assign is still validated strictly.
+
 ## [0.3.0] - 2026-10-09
 
 ### Added
@@ -125,7 +136,8 @@ First release.
 - Works with `AsyncSession`.
 - Tested with SQLite, PostgreSQL and MariaDB, on Python 3.11 to 3.14.
 
-[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.3...v0.3.0
 [0.2.3]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/joakimnordling/sqlalchemy-pydantic-json/compare/v0.2.1...v0.2.2

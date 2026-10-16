@@ -39,6 +39,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "alias_users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     profile: Mapped[Profile] = mapped_column(Profile.column(), default=Profile)
 
@@ -52,6 +53,7 @@ class Renamed(EmbeddedPydanticModel):
 
 class RenamedRow(Base):
     __tablename__ = "alias_renamed_rows"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     data: Mapped[Renamed] = mapped_column(Renamed.column())
 

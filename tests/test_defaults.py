@@ -24,6 +24,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "defaults"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     from_class: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
     from_dict: Mapped[Settings] = mapped_column(Settings.column(), default={"theme": "dark"})

@@ -27,6 +27,7 @@ class Item(EmbeddedPydanticModel):
 
 class Settings(EmbeddedPydanticModel):
     model_config = ConfigDict(extra="allow")
+
     items: list[Item] = []
     labels: list[str] = []
     queue: deque[Item] = deque()
@@ -41,6 +42,7 @@ class Base(DeclarativeBase):
 
 class Row(Base):
     __tablename__ = "position_rows"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
 

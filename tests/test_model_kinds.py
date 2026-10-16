@@ -56,11 +56,13 @@ class Box(EmbeddedPydanticModel, Generic[T]):
 
 class Extras(EmbeddedPydanticModel):
     model_config = ConfigDict(extra="allow")
+
     name: str = ""
 
 
 class TypedExtras(EmbeddedPydanticModel):
     model_config = ConfigDict(extra="allow")
+
     __pydantic_extra__: dict[str, Cat] = Field(init=False)
 
 
@@ -90,6 +92,7 @@ class Base(DeclarativeBase):
 
 class Row(Base):
     __tablename__ = "model_kind_rows"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     pets: Mapped[Pets] = mapped_column(Pets.column(), default=lambda: Pets([]))
     pet: Mapped[Pet] = mapped_column(Pet.column(), default=lambda: Pet(Cat()))

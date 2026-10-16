@@ -44,6 +44,7 @@ def make_models(json_type: Any) -> tuple[sa.MetaData, Any]:
 
     class User(Base):
         __tablename__ = "json_types"
+
         id: Mapped[int] = mapped_column(primary_key=True)
         settings: Mapped[Settings] = mapped_column(
             Settings.column(json_type=json_type), default=Settings
