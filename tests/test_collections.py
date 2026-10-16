@@ -42,6 +42,7 @@ class Base(DeclarativeBase):
 
 class Row(Base):
     __tablename__ = "collection_rows"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
 
@@ -363,6 +364,7 @@ def test_frozendict_contents_are_not_tracked(make_engine: MakeEngine) -> None:
 
     class FrozenRow(FrozenBase):
         __tablename__ = "frozendict_rows"
+
         id: Mapped[int] = mapped_column(primary_key=True)
         settings: Mapped[Frozen] = mapped_column(Frozen.column(), default=Frozen)
 

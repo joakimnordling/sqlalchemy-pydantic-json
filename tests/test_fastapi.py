@@ -65,6 +65,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "fastapi_users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
     payment: Mapped[Payment] = mapped_column(Payment.column(), default=lambda: Payment(Card()))

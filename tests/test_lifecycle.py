@@ -32,6 +32,7 @@ class Base(DeclarativeBase):
 
 class Row(Base):
     __tablename__ = "lifecycle_rows"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
 

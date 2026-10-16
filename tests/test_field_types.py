@@ -76,6 +76,7 @@ class Base(DeclarativeBase):
 
 class Row(Base):
     __tablename__ = "field_types"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     # JSONB on PostgreSQL, where the json type can't be compared with =
     values: Mapped[Values] = mapped_column(
@@ -288,6 +289,7 @@ class Binary(EmbeddedPydanticModel):
 
 class BinaryRow(Base):
     __tablename__ = "field_types_binary"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     data: Mapped[Binary] = mapped_column(Binary.column(), default=Binary)
 
@@ -338,6 +340,7 @@ class PartlyStrict(EmbeddedPydanticModel):
 
 class StrictRow(Base):
     __tablename__ = "field_types_strict"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     strict: Mapped[StrictValues] = mapped_column(StrictValues.column(), default=StrictValues)
     partly: Mapped[PartlyStrict] = mapped_column(PartlyStrict.column(), default=PartlyStrict)

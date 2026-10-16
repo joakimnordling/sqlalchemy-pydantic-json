@@ -44,6 +44,7 @@ def make_models(sub_base: type[BaseModel]) -> Models:
 
     class User(Base):
         __tablename__ = "u"
+
         id: Mapped[int] = mapped_column(primary_key=True)
         settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
         opt: Mapped[Settings | None] = mapped_column(Settings.column(), nullable=True)

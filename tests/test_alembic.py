@@ -45,6 +45,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
     extra: Mapped[Settings | None] = mapped_column(Settings.column())
@@ -194,6 +195,7 @@ def users_metadata(json_type: Any) -> sa.MetaData:
 
     class User(Base):
         __tablename__ = "users"
+
         id: Mapped[int] = mapped_column(primary_key=True)
         settings: Mapped[Settings] = mapped_column(Settings.column(json_type=json_type))
 

@@ -69,6 +69,7 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default=Settings)
     extra: Mapped[Settings | None] = mapped_column(Settings.column())
@@ -82,6 +83,7 @@ class DataclassBase(MappedAsDataclass, DeclarativeBase):
 
 class DataclassUser(DataclassBase):
     __tablename__ = "dataclass_users"
+
     id: Mapped[int] = mapped_column(primary_key=True)
     settings: Mapped[Settings] = mapped_column(Settings.column(), default_factory=Settings)
     extra: Mapped[Settings | None] = mapped_column(Settings.column(), default=None)
