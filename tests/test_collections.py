@@ -323,6 +323,36 @@ def test_deque_index_must_be_an_integer(make_engine: MakeEngine) -> None:
         assert row not in s.dirty
 
 
+def test_deque_takes_any_index(make_engine: MakeEngine, expire_on_commit: bool) -> None:
+    """Like a deque, insert(), rotate() and *= take any object with __index__, not only an int."""
+
+    class Index:
+        def __init__(self, n: int) -> None:
+            self.n = n
+
+        def __index__(self) -> int:
+            return self.n
+
+    # Any: mypy's typeshed still types these deque methods as taking an int (newer ones don't)
+    def index(n: int) -> Any:
+        return Index(n)
+
+    def lists(st: Settings) -> list[list[int]]:
+        return list(st.queue)
+
+    run_steps(
+        make_engine(Base.metadata),
+        expire_on_commit,
+        [
+            (lambda st: st.queue.extend([[1], [2]]), lambda st: lists(st) == [[1], [2]]),
+            (lambda st: st.queue.insert(index(-1), [3]), lambda st: lists(st) == [[1], [3], [2]]),
+            (lambda st: st.queue[1].append(4), lambda st: lists(st)[1] == [3, 4]),
+            (lambda st: st.queue.rotate(index(1)), lambda st: lists(st)[0] == [2]),
+            (lambda st: st.queue.__imul__(index(2)), lambda st: len(st.queue) == 6),
+        ],
+    )
+
+
 def test_deque_should_not_mark_dirty(make_engine: MakeEngine) -> None:
     engine = make_engine(Base.metadata)
     with Session(engine) as s:

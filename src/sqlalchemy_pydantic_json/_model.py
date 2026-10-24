@@ -707,8 +707,8 @@ class _TrackedDeque(_TrackedContainer, deque[_T]):
         self.extend(value)
         return self
 
-    def __imul__(self, value: int, /) -> Self:
-        super().__imul__(value)
+    def __imul__(self, value: SupportsIndex, /) -> Self:
+        super().__imul__(operator.index(value))
         self.changed()
         return self
 
@@ -731,10 +731,10 @@ class _TrackedDeque(_TrackedContainer, deque[_T]):
         super().extendleft([_link(x, _IndexLink, self, last - i) for i, x in enumerate(items)])
         self.changed()
 
-    def insert(self, i: int, x: _T, /) -> None:
-        n = len(self)
-        position = max(i + n, 0) if i < 0 else min(i, n)  # as deque.insert clamps it
-        super().insert(i, _link(x, _IndexLink, self, position))
+    def insert(self, i: SupportsIndex, x: _T, /) -> None:
+        n, index = len(self), operator.index(i)
+        position = max(index + n, 0) if index < 0 else min(index, n)  # as deque.insert clamps it
+        super().insert(index, _link(x, _IndexLink, self, position))
         self.changed()
 
     def pop(self) -> _T:  # type: ignore[override]
@@ -755,8 +755,8 @@ class _TrackedDeque(_TrackedContainer, deque[_T]):
         super().clear()
         self.changed()
 
-    def rotate(self, n: int = 1, /) -> None:
-        super().rotate(n)
+    def rotate(self, n: SupportsIndex = 1, /) -> None:
+        super().rotate(operator.index(n))
         self.changed()
 
     def reverse(self) -> None:
