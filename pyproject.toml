@@ -47,7 +47,7 @@ source-exclude = ["**/__pycache__", "**/*.pyc"]
 [dependency-groups]
 dev = [
     "pytest>=8",
-    "ruff==0.17.0",
+    "ruff==0.17.2",
     "mypy==2.4.0",
     "pyright==1.1.414",
     "ty==0.0.91",  # keep in sync with the ty-pre-commit rev,
