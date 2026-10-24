@@ -8,6 +8,11 @@ may contain breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `insert()` on a `deque` field raised `TypeError` when given an index that isn't an `int` but has
+  `__index__`, which `deque.insert()` accepts.
+
 ## [0.3.1] - 2026-10-16
 
 ### Fixed
